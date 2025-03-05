@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TMX Processor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .file-info {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            color: #666;
+        }
+        .error-message {
+            color: #721c24;
+            background-color: #f8d7da;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            display: none;
+        }
+        .progress-section {
+            display: none;
+            margin: 15px 0;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #f0f0f0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #4CAF50;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        .status-message {
+            margin-top: 10px;
+            color: #666;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #1976d2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        select, input[type="file"] {
+            margin: 10px 0;
+            padding: 5px;
+            width: 100%;
+            max-width: 400px;
+        }
+        .template-code {
+            color: white;
+            height: 0;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <div class="template-code">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    {{ message }}
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+    </div>
+
+    <div class="container">
+        <h1>TMX Processor</h1>
+        
+        <div class="section">
+            <h2>Select Operation</h2>
+            <form id="uploadForm" method="post" enctype="multipart/form-data">
+                <select name="operation" id="operation" onchange="updateFileInfo()">
+                    <option value="">Choose an operation...</option>
+                    <option value="convert_vatv">Convert VATV CSV</option>
+                    <option value="convert_termweb">Convert TermWeb Excel</option>
+                    <option value="remove_empty">Remove Empty Targets</option>
+                    <option value="find_duplicates">Find True Duplicates</option>
+                    <option value="non_true_duplicates">Find Non-True Duplicates</option>
+                    <option value="clean_mt">Simple Clean TMX for MT</option>
+                    <option value="merge_tmx">Merge TMX Files</option>
+                    <option value="split_language">Split TMX by Language</option>
+                    <option value="split_size">Split TMX by Size</option>
+                    <option value="batch_process_tms">Batch Clean TMX for TMS</option>
+                    <option value="batch_process_mt">Batch Clean TMX for MT (also removes blanks and duplicates)</option>
+                </select>
+                
+                <div id="fileInfo" class="file-info" style="display: none;"></div>
+                
+                <input type="file" name="file" id="fileInput" onchange="validateFile()">
+                <div id="errorMessage" class="error-message"></div>
+                
+                <div id="progressSection" class="progress-section">
+                    <div class="progress-bar">
+                        <div class="progress-fill"></div>
+                    </div>
+                    <div class="status-message">Processing...</div>
+                </div>
+                
+                <button type="submit" id="submitButton" disabled>Process File</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const fileTypes = {
+            'convert_vatv': {
+                extensions: ['.csv'],
+                description: 'Accepts VATV CSV files ([language]_VATV.csv)'
+            },
+            'convert_termweb': {
+                extensions: ['.xlsx', '.xls'],
+                description: 'Accepts TermWeb Excel files'
+            },
+            'remove_empty': {
+                extensions: ['.tmx'],
+                description: 'Removes TUs with empty target segments'
+            },
+            'find_duplicates': {
+                extensions: ['.tmx'],
+                description: 'Identifies and removes true duplicate segments'
+            },
+            'non_true_duplicates': {
+                extensions: ['.tmx'],
+                description: 'Identifies and removes non-true duplicate segments'
+            },
+            'clean_mt': {
+                extensions: ['.tmx'],
+                description: 'Cleans TMX file for MT training'
+            },
+            'merge_tmx': {
+                extensions: ['.tmx'],
+                description: 'Merges multiple TMX files'
+            },
+            'split_language': {
+                extensions: ['.tmx'],
+                description: 'Splits TMX file by language pairs'
+            },
+            'split_size': {
+                extensions: ['.tmx'],
+                description: 'Splits TMX file into smaller files by TU count'
+            },
+            'batch_process_tms': {
+                extensions: ['.tmx'],
+                description: 'Batch process: Removes empty targets, true and non-true duplicates'
+            },
+            'batch_process_mt': {
+                extensions: ['.tmx'],
+                description: 'Batch process: TMS cleaning plus MT-specific cleaning'
+            }
+        };
+
+        function updateFileInfo() {
+            const operation = document.getElementById('operation').value;
+            const fileInfo = document.getElementById('fileInfo');
+            
+            if (operation && fileTypes[operation]) {
+                fileInfo.textContent = fileTypes[operation].description;
+                fileInfo.style.display = 'block';
+            } else {
+                fileInfo.style.display = 'none';
+            }
+            
+            validateFile();
+        }
+
+        function validateFile() {
+            const fileInput = document.getElementById('fileInput');
+            const operation = document.getElementById('operation').value;
+            const errorMessage = document.getElementById('errorMessage');
+            const submitButton = document.getElementById('submitButton');
+            
+            if (!operation || !fileInput.files.length) {
+                submitButton.disabled = true;
+                errorMessage.style.display = 'none';
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            const fileExt = '.' + file.name.split('.').pop().toLowerCase();
+            
+            if (!fileTypes[operation].extensions.includes(fileExt)) {
+                errorMessage.textContent = `Invalid file type. Please select a ${fileTypes[operation].extensions.join(' or ')} file.`;
+                errorMessage.style.display = 'block';
+                submitButton.disabled = true;
+                return;
+            }
+            
+            errorMessage.style.display = 'none';
+            submitButton.disabled = false;
+        }
+
+        const form = document.getElementById('uploadForm');
+        const errorMessage = document.getElementById('errorMessage');
+
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            console.log('Form submitted'); // Debug log
+
+            const formData = new FormData(this);
+            
+            // Debug logs
+            console.log('Operation:', formData.get('operation'));
+            console.log('File:', formData.get('file'));
+
+            fetch('/', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                console.log('Response:', response); // Debug log
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.blob();
+            })
+            .then(blob => {
+                console.log('Blob received:', blob); // Debug log
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'processed_' + formData.get('file').name;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+            })
+            .catch(error => {
+                console.error('Error:', error); // Debug log
+                errorMessage.textContent = 'Error: ' + error.message;
+                errorMessage.style.display = 'block';
+            });
+        });
+    </script>
+</body>
+</html> 
