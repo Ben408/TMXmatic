@@ -26,7 +26,6 @@ imports:
  &#8226;   <a href="#collections">collections</a>
  &#8226;   <a href="#collections.abc">collections.abc</a>
  &#8226;   <a href="#copyreg">copyreg</a>
- &#8226;   <a href="#csv">csv</a>
  &#8226;   <a href="#datetime">datetime</a>
  &#8226;   <a href="#encodings">encodings</a>
  &#8226;   <a href="#encodings.aliases">encodings.aliases</a>
@@ -155,7 +154,6 @@ imports:
  &#8226;   <a href="#flask.templating">flask.templating</a>
  &#8226;   <a href="#functools">functools</a>
  &#8226;   <a href="#genericpath">genericpath</a>
- &#8226;   <a href="#glob">glob</a>
  &#8226;   <a href="#heapq">heapq</a>
  &#8226;   <a href="#io">io</a>
  &#8226;   <a href="#jinja2">jinja2</a>
@@ -168,6 +166,7 @@ imports:
  &#8226;   <a href="#openpyxl">openpyxl</a>
  &#8226;   <a href="#operator">operator</a>
  &#8226;   <a href="#os">os</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
  &#8226;   <a href="#posixpath">posixpath</a>
  &#8226;   <a href="#pyi_rth_inspect.py">pyi_rth_inspect.py</a>
  &#8226;   <a href="#pyi_rth_multiprocessing.py">pyi_rth_multiprocessing.py</a>
@@ -179,6 +178,22 @@ imports:
  &#8226;   <a href="#re._parser">re._parser</a>
  &#8226;   <a href="#reprlib">reprlib</a>
  &#8226;   <a href="#scripts">scripts</a>
+ &#8226;   <a href="#scripts.batch_process">scripts.batch_process</a>
+ &#8226;   <a href="#scripts.clean_tmx_for_mt">scripts.clean_tmx_for_mt</a>
+ &#8226;   <a href="#scripts.convert_termweb">scripts.convert_termweb</a>
+ &#8226;   <a href="#scripts.convert_vatv">scripts.convert_vatv</a>
+ &#8226;   <a href="#scripts.count_creation_dates">scripts.count_creation_dates</a>
+ &#8226;   <a href="#scripts.count_last_usage">scripts.count_last_usage</a>
+ &#8226;   <a href="#scripts.extract_ntds">scripts.extract_ntds</a>
+ &#8226;   <a href="#scripts.extract_translations">scripts.extract_translations</a>
+ &#8226;   <a href="#scripts.find_date_duplicates">scripts.find_date_duplicates</a>
+ &#8226;   <a href="#scripts.merge_tmx">scripts.merge_tmx</a>
+ &#8226;   <a href="#scripts.remove_duplicates">scripts.remove_duplicates</a>
+ &#8226;   <a href="#scripts.remove_old">scripts.remove_old</a>
+ &#8226;   <a href="#scripts.remove_sentence">scripts.remove_sentence</a>
+ &#8226;   <a href="#scripts.split_tmx">scripts.split_tmx</a>
+ &#8226;   <a href="#secrets">secrets</a>
+ &#8226;   <a href="#shutil">shutil</a>
  &#8226;   <a href="#sre_compile">sre_compile</a>
  &#8226;   <a href="#sre_constants">sre_constants</a>
  &#8226;   <a href="#sre_parse">sre_parse</a>
@@ -193,7 +208,7 @@ imports:
  &#8226;   <a href="#werkzeug.middleware">werkzeug.middleware</a>
  &#8226;   <a href="#werkzeug.middleware.proxy_fix">werkzeug.middleware.proxy_fix</a>
  &#8226;   <a href="#werkzeug.utils">werkzeug.utils</a>
- &#8226;   <a href="#xml.etree.ElementTree">xml.etree.ElementTree</a>
+ &#8226;   <a href="#zipfile">zipfile</a>
 
   </div>
 
@@ -345,7 +360,7 @@ imported by:
   <a target="code" href="" type="text/plain"><tt>'org.python'</tt></a>
 <span class="moduletype">MissingModule</span>  <div class="import">
 imported by:
-    <a href="#pickle">pickle</a>
+    <a href="#copy">copy</a>
  &#8226;   <a href="#xml.sax">xml.sax</a>
 
   </div>
@@ -390,7 +405,8 @@ imported by:
   <a target="code" href="///C:/Users/bjcor/Desktop/Workday/TM%20Cleanup/Cursor/tmx/Lib/site-packages/PythonTmx/__init__.py" type="text/plain"><tt>PythonTmx</tt></a>
 <span class="moduletype">Package</span>  <div class="import">
 imports:
-    <a href="#PythonTmx.inline">PythonTmx.inline</a>
+    <a href="#PythonTmx.base">PythonTmx.base</a>
+ &#8226;   <a href="#PythonTmx.inline">PythonTmx.inline</a>
  &#8226;   <a href="#PythonTmx.structural">PythonTmx.structural</a>
  &#8226;   <a href="#csv">csv</a>
  &#8226;   <a href="#io">io</a>
@@ -405,6 +421,22 @@ imported by:
  &#8226;   <a href="#PythonTmx.inline">PythonTmx.inline</a>
  &#8226;   <a href="#PythonTmx.structural">PythonTmx.structural</a>
  &#8226;   <a href="#app.py">app.py</a>
+ &#8226;   <a href="#scripts.batch_process">scripts.batch_process</a>
+ &#8226;   <a href="#scripts.clean_mt">scripts.clean_mt</a>
+ &#8226;   <a href="#scripts.clean_tmx_for_mt">scripts.clean_tmx_for_mt</a>
+ &#8226;   <a href="#scripts.convert_termweb">scripts.convert_termweb</a>
+ &#8226;   <a href="#scripts.convert_vatv">scripts.convert_vatv</a>
+ &#8226;   <a href="#scripts.count_creation_dates">scripts.count_creation_dates</a>
+ &#8226;   <a href="#scripts.count_last_usage">scripts.count_last_usage</a>
+ &#8226;   <a href="#scripts.extract_ntds">scripts.extract_ntds</a>
+ &#8226;   <a href="#scripts.extract_translations">scripts.extract_translations</a>
+ &#8226;   <a href="#scripts.merge_tmx">scripts.merge_tmx</a>
+ &#8226;   <a href="#scripts.remove_duplicates">scripts.remove_duplicates</a>
+ &#8226;   <a href="#scripts.remove_empty">scripts.remove_empty</a>
+ &#8226;   <a href="#scripts.remove_old">scripts.remove_old</a>
+ &#8226;   <a href="#scripts.remove_sentence">scripts.remove_sentence</a>
+ &#8226;   <a href="#scripts.split_tmx">scripts.split_tmx</a>
+ &#8226;   <a href="#scripts.tmx_utils">scripts.tmx_utils</a>
 
   </div>
 
@@ -426,7 +458,8 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#PythonTmx.inline">PythonTmx.inline</a>
+    <a href="#PythonTmx">PythonTmx</a>
+ &#8226;   <a href="#PythonTmx.inline">PythonTmx.inline</a>
  &#8226;   <a href="#PythonTmx.structural">PythonTmx.structural</a>
 
   </div>
@@ -3657,6 +3690,11 @@ imported by:
  &#8226;   <a href="#pprint">pprint</a>
  &#8226;   <a href="#pydoc">pydoc</a>
  &#8226;   <a href="#queue">queue</a>
+ &#8226;   <a href="#scripts.count_creation_dates">scripts.count_creation_dates</a>
+ &#8226;   <a href="#scripts.count_last_usage">scripts.count_last_usage</a>
+ &#8226;   <a href="#scripts.extract_ntds">scripts.extract_ntds</a>
+ &#8226;   <a href="#scripts.find_date_duplicates">scripts.find_date_duplicates</a>
+ &#8226;   <a href="#scripts.remove_duplicates">scripts.remove_duplicates</a>
  &#8226;   <a href="#selectors">selectors</a>
  &#8226;   <a href="#shlex">shlex</a>
  &#8226;   <a href="#shutil">shutil</a>
@@ -4047,8 +4085,8 @@ imported by:
   <a target="code" href="///C:/Python311/Lib/copy.py" type="text/plain"><tt>copy</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
-    <a href="#copyreg">copyreg</a>
- &#8226;   <a href="#org">org</a>
+    <a href="#'org.python'">'org.python'</a>
+ &#8226;   <a href="#copyreg">copyreg</a>
  &#8226;   <a href="#types">types</a>
  &#8226;   <a href="#weakref">weakref</a>
 
@@ -4147,8 +4185,12 @@ imports:
 imported by:
     <a href="#PythonTmx">PythonTmx</a>
  &#8226;   <a href="#PythonTmx.structural">PythonTmx.structural</a>
- &#8226;   <a href="#app.py">app.py</a>
  &#8226;   <a href="#importlib.metadata">importlib.metadata</a>
+ &#8226;   <a href="#scripts.convert_vatv">scripts.convert_vatv</a>
+ &#8226;   <a href="#scripts.count_creation_dates">scripts.count_creation_dates</a>
+ &#8226;   <a href="#scripts.count_last_usage">scripts.count_last_usage</a>
+ &#8226;   <a href="#scripts.extract_translations">scripts.extract_translations</a>
+ &#8226;   <a href="#scripts.find_date_duplicates">scripts.find_date_duplicates</a>
 
   </div>
 
@@ -4287,6 +4329,22 @@ imported by:
  &#8226;   <a href="#openpyxl.packaging.core">openpyxl.packaging.core</a>
  &#8226;   <a href="#openpyxl.utils.datetime">openpyxl.utils.datetime</a>
  &#8226;   <a href="#openpyxl.writer.excel">openpyxl.writer.excel</a>
+ &#8226;   <a href="#scripts.batch_process">scripts.batch_process</a>
+ &#8226;   <a href="#scripts.clean_mt">scripts.clean_mt</a>
+ &#8226;   <a href="#scripts.clean_tmx_for_mt">scripts.clean_tmx_for_mt</a>
+ &#8226;   <a href="#scripts.convert_termweb">scripts.convert_termweb</a>
+ &#8226;   <a href="#scripts.convert_vatv">scripts.convert_vatv</a>
+ &#8226;   <a href="#scripts.count_creation_dates">scripts.count_creation_dates</a>
+ &#8226;   <a href="#scripts.count_last_usage">scripts.count_last_usage</a>
+ &#8226;   <a href="#scripts.extract_ntds">scripts.extract_ntds</a>
+ &#8226;   <a href="#scripts.extract_translations">scripts.extract_translations</a>
+ &#8226;   <a href="#scripts.find_date_duplicates">scripts.find_date_duplicates</a>
+ &#8226;   <a href="#scripts.merge_tmx">scripts.merge_tmx</a>
+ &#8226;   <a href="#scripts.remove_duplicates">scripts.remove_duplicates</a>
+ &#8226;   <a href="#scripts.remove_empty">scripts.remove_empty</a>
+ &#8226;   <a href="#scripts.remove_old">scripts.remove_old</a>
+ &#8226;   <a href="#scripts.remove_sentence">scripts.remove_sentence</a>
+ &#8226;   <a href="#scripts.split_tmx">scripts.split_tmx</a>
  &#8226;   <a href="#werkzeug._internal">werkzeug._internal</a>
  &#8226;   <a href="#werkzeug.exceptions">werkzeug.exceptions</a>
  &#8226;   <a href="#werkzeug.http">werkzeug.http</a>
@@ -8571,8 +8629,7 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#app.py">app.py</a>
- &#8226;   <a href="#click.utils">click.utils</a>
+    <a href="#click.utils">click.utils</a>
  &#8226;   <a href="#pdb">pdb</a>
  &#8226;   <a href="#webbrowser">webbrowser</a>
 
@@ -8892,6 +8949,7 @@ imports:
  &#8226;   <a href="#importlib">importlib</a>
  &#8226;   <a href="#importlib._bootstrap">importlib._bootstrap</a>
  &#8226;   <a href="#importlib._bootstrap_external">importlib._bootstrap_external</a>
+ &#8226;   <a href="#importlib.machinery">importlib.machinery</a>
  &#8226;   <a href="#sys">sys</a>
  &#8226;   <a href="#warnings">warnings</a>
 
@@ -9028,7 +9086,8 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#importlib.abc">importlib.abc</a>
+    <a href="#importlib">importlib</a>
+ &#8226;   <a href="#importlib.abc">importlib.abc</a>
  &#8226;   <a href="#inspect">inspect</a>
  &#8226;   <a href="#pkgutil">pkgutil</a>
  &#8226;   <a href="#py_compile">py_compile</a>
@@ -10732,6 +10791,21 @@ imported by:
  &#8226;   <a href="#http.cookiejar">http.cookiejar</a>
  &#8226;   <a href="#jinja2.runtime">jinja2.runtime</a>
  &#8226;   <a href="#multiprocessing.util">multiprocessing.util</a>
+ &#8226;   <a href="#scripts.batch_process">scripts.batch_process</a>
+ &#8226;   <a href="#scripts.clean_mt">scripts.clean_mt</a>
+ &#8226;   <a href="#scripts.clean_tmx_for_mt">scripts.clean_tmx_for_mt</a>
+ &#8226;   <a href="#scripts.convert_termweb">scripts.convert_termweb</a>
+ &#8226;   <a href="#scripts.convert_vatv">scripts.convert_vatv</a>
+ &#8226;   <a href="#scripts.count_creation_dates">scripts.count_creation_dates</a>
+ &#8226;   <a href="#scripts.count_last_usage">scripts.count_last_usage</a>
+ &#8226;   <a href="#scripts.extract_ntds">scripts.extract_ntds</a>
+ &#8226;   <a href="#scripts.extract_translations">scripts.extract_translations</a>
+ &#8226;   <a href="#scripts.merge_tmx">scripts.merge_tmx</a>
+ &#8226;   <a href="#scripts.remove_duplicates">scripts.remove_duplicates</a>
+ &#8226;   <a href="#scripts.remove_empty">scripts.remove_empty</a>
+ &#8226;   <a href="#scripts.remove_old">scripts.remove_old</a>
+ &#8226;   <a href="#scripts.remove_sentence">scripts.remove_sentence</a>
+ &#8226;   <a href="#scripts.split_tmx">scripts.split_tmx</a>
  &#8226;   <a href="#unittest._log">unittest._log</a>
  &#8226;   <a href="#werkzeug._internal">werkzeug._internal</a>
 
@@ -11509,6 +11583,7 @@ imported by:
  &#8226;   <a href="#openpyxl.utils.datetime">openpyxl.utils.datetime</a>
  &#8226;   <a href="#openpyxl.utils.units">openpyxl.utils.units</a>
  &#8226;   <a href="#random">random</a>
+ &#8226;   <a href="#scripts.split_tmx">scripts.split_tmx</a>
  &#8226;   <a href="#selectors">selectors</a>
  &#8226;   <a href="#statistics">statistics</a>
  &#8226;   <a href="#werkzeug.local">werkzeug.local</a>
@@ -11582,6 +11657,7 @@ imports:
     <a href="#multiprocessing">multiprocessing</a>
  &#8226;   <a href="#multiprocessing.AuthenticationError">multiprocessing.AuthenticationError</a>
  &#8226;   <a href="#multiprocessing.BufferTooShort">multiprocessing.BufferTooShort</a>
+ &#8226;   <a href="#multiprocessing.Pool">multiprocessing.Pool</a>
  &#8226;   <a href="#multiprocessing.TimeoutError">multiprocessing.TimeoutError</a>
  &#8226;   <a href="#multiprocessing.connection">multiprocessing.connection</a>
  &#8226;   <a href="#multiprocessing.context">multiprocessing.context</a>
@@ -11626,6 +11702,7 @@ imported by:
  &#8226;   <a href="#multiprocessing.synchronize">multiprocessing.synchronize</a>
  &#8226;   <a href="#multiprocessing.util">multiprocessing.util</a>
  &#8226;   <a href="#pyi_rth_multiprocessing.py">pyi_rth_multiprocessing.py</a>
+ &#8226;   <a href="#scripts.batch_process">scripts.batch_process</a>
 
   </div>
 
@@ -11650,6 +11727,18 @@ imported by:
 imported by:
     <a href="#multiprocessing">multiprocessing</a>
  &#8226;   <a href="#multiprocessing.connection">multiprocessing.connection</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="multiprocessing.Pool"></a>
+  <a target="code" href="" type="text/plain"><tt>multiprocessing.Pool</tt></a>
+<span class="moduletype">MissingModule</span>  <div class="import">
+imported by:
+    <a href="#multiprocessing">multiprocessing</a>
+ &#8226;   <a href="#scripts.batch_process">scripts.batch_process</a>
 
   </div>
 
@@ -12529,6 +12618,7 @@ imported by:
  &#8226;   <a href="#openpyxl.writer">openpyxl.writer</a>
  &#8226;   <a href="#openpyxl.xml">openpyxl.xml</a>
  &#8226;   <a href="#openpyxl.xml.functions">openpyxl.xml.functions</a>
+ &#8226;   <a href="#scripts.convert_termweb">scripts.convert_termweb</a>
 
   </div>
 
@@ -15886,6 +15976,7 @@ imported by:
  &#8226;   <a href="#openpyxl.worksheet.print_settings">openpyxl.worksheet.print_settings</a>
  &#8226;   <a href="#openpyxl.worksheet.table">openpyxl.worksheet.table</a>
  &#8226;   <a href="#openpyxl.worksheet.worksheet">openpyxl.worksheet.worksheet</a>
+ &#8226;   <a href="#scripts.convert_termweb">scripts.convert_termweb</a>
 
   </div>
 
@@ -17295,7 +17386,7 @@ imported by:
   <a target="code" href="" type="text/plain"><tt>org</tt></a>
 <span class="moduletype">MissingModule</span>  <div class="import">
 imported by:
-    <a href="#copy">copy</a>
+    <a href="#pickle">pickle</a>
 
   </div>
 
@@ -17418,6 +17509,13 @@ imported by:
  &#8226;   <a href="#pyi_rth_inspect.py">pyi_rth_inspect.py</a>
  &#8226;   <a href="#random">random</a>
  &#8226;   <a href="#runpy">runpy</a>
+ &#8226;   <a href="#scripts.batch_process">scripts.batch_process</a>
+ &#8226;   <a href="#scripts.clean_mt">scripts.clean_mt</a>
+ &#8226;   <a href="#scripts.convert_termweb">scripts.convert_termweb</a>
+ &#8226;   <a href="#scripts.find_date_duplicates">scripts.find_date_duplicates</a>
+ &#8226;   <a href="#scripts.merge_tmx">scripts.merge_tmx</a>
+ &#8226;   <a href="#scripts.remove_duplicates">scripts.remove_duplicates</a>
+ &#8226;   <a href="#scripts.split_tmx">scripts.split_tmx</a>
  &#8226;   <a href="#shlex">shlex</a>
  &#8226;   <a href="#shutil">shutil</a>
  &#8226;   <a href="#socket">socket</a>
@@ -17501,12 +17599,27 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#click.types">click.types</a>
+    <a href="#app.py">app.py</a>
+ &#8226;   <a href="#click.types">click.types</a>
  &#8226;   <a href="#flask.sansio.scaffold">flask.sansio.scaffold</a>
  &#8226;   <a href="#importlib.metadata">importlib.metadata</a>
  &#8226;   <a href="#importlib.resources._common">importlib.resources._common</a>
  &#8226;   <a href="#importlib.resources._legacy">importlib.resources._legacy</a>
  &#8226;   <a href="#importlib.resources.readers">importlib.resources.readers</a>
+ &#8226;   <a href="#scripts.batch_process">scripts.batch_process</a>
+ &#8226;   <a href="#scripts.clean_tmx_for_mt">scripts.clean_tmx_for_mt</a>
+ &#8226;   <a href="#scripts.convert_termweb">scripts.convert_termweb</a>
+ &#8226;   <a href="#scripts.convert_vatv">scripts.convert_vatv</a>
+ &#8226;   <a href="#scripts.count_creation_dates">scripts.count_creation_dates</a>
+ &#8226;   <a href="#scripts.count_last_usage">scripts.count_last_usage</a>
+ &#8226;   <a href="#scripts.extract_ntds">scripts.extract_ntds</a>
+ &#8226;   <a href="#scripts.extract_translations">scripts.extract_translations</a>
+ &#8226;   <a href="#scripts.merge_tmx">scripts.merge_tmx</a>
+ &#8226;   <a href="#scripts.remove_duplicates">scripts.remove_duplicates</a>
+ &#8226;   <a href="#scripts.remove_empty">scripts.remove_empty</a>
+ &#8226;   <a href="#scripts.remove_old">scripts.remove_old</a>
+ &#8226;   <a href="#scripts.remove_sentence">scripts.remove_sentence</a>
+ &#8226;   <a href="#scripts.split_tmx">scripts.split_tmx</a>
  &#8226;   <a href="#werkzeug._reloader">werkzeug._reloader</a>
  &#8226;   <a href="#zipfile">zipfile</a>
 
@@ -17558,14 +17671,14 @@ imported by:
   <a target="code" href="///C:/Python311/Lib/pickle.py" type="text/plain"><tt>pickle</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
-    <a href="#'org.python'">'org.python'</a>
- &#8226;   <a href="#_compat_pickle">_compat_pickle</a>
+    <a href="#_compat_pickle">_compat_pickle</a>
  &#8226;   <a href="#_pickle">_pickle</a>
  &#8226;   <a href="#codecs">codecs</a>
  &#8226;   <a href="#copyreg">copyreg</a>
  &#8226;   <a href="#functools">functools</a>
  &#8226;   <a href="#io">io</a>
  &#8226;   <a href="#itertools">itertools</a>
+ &#8226;   <a href="#org">org</a>
  &#8226;   <a href="#pprint">pprint</a>
  &#8226;   <a href="#re">re</a>
  &#8226;   <a href="#struct">struct</a>
@@ -17578,6 +17691,7 @@ imported by:
     <a href="#jinja2.bccache">jinja2.bccache</a>
  &#8226;   <a href="#logging">logging</a>
  &#8226;   <a href="#multiprocessing.reduction">multiprocessing.reduction</a>
+ &#8226;   <a href="#scripts.batch_process">scripts.batch_process</a>
  &#8226;   <a href="#tracemalloc">tracemalloc</a>
 
   </div>
@@ -18054,6 +18168,10 @@ imported by:
  &#8226;   <a href="#re._constants">re._constants</a>
  &#8226;   <a href="#re._parser">re._parser</a>
  &#8226;   <a href="#rlcompleter">rlcompleter</a>
+ &#8226;   <a href="#scripts.batch_process">scripts.batch_process</a>
+ &#8226;   <a href="#scripts.clean_mt">scripts.clean_mt</a>
+ &#8226;   <a href="#scripts.clean_tmx_for_mt">scripts.clean_tmx_for_mt</a>
+ &#8226;   <a href="#scripts.remove_sentence">scripts.remove_sentence</a>
  &#8226;   <a href="#shlex">shlex</a>
  &#8226;   <a href="#sre_compile">sre_compile</a>
  &#8226;   <a href="#sre_constants">sre_constants</a>
@@ -18270,10 +18388,439 @@ imported by:
 
 <div class="node">
   <a name="scripts"></a>
-  <a target="code" href="" type="text/plain"><tt>scripts</tt></a>
-<span class="moduletype">MissingModule</span>  <div class="import">
+  <a target="code" href="///C:/Users/bjcor/Desktop/Workday/TM%20Cleanup/Cursor/scripts/__init__.py" type="text/plain"><tt>scripts</tt></a>
+<span class="moduletype">Package</span>  <div class="import">
+imports:
+    <a href="#scripts.batch_process">scripts.batch_process</a>
+ &#8226;   <a href="#scripts.clean_tmx_for_mt">scripts.clean_tmx_for_mt</a>
+ &#8226;   <a href="#scripts.convert_termweb">scripts.convert_termweb</a>
+ &#8226;   <a href="#scripts.convert_vatv">scripts.convert_vatv</a>
+ &#8226;   <a href="#scripts.count_creation_dates">scripts.count_creation_dates</a>
+ &#8226;   <a href="#scripts.count_last_usage">scripts.count_last_usage</a>
+ &#8226;   <a href="#scripts.extract_ntds">scripts.extract_ntds</a>
+ &#8226;   <a href="#scripts.extract_translations">scripts.extract_translations</a>
+ &#8226;   <a href="#scripts.find_date_duplicates">scripts.find_date_duplicates</a>
+ &#8226;   <a href="#scripts.merge_tmx">scripts.merge_tmx</a>
+ &#8226;   <a href="#scripts.remove_duplicates">scripts.remove_duplicates</a>
+ &#8226;   <a href="#scripts.remove_empty">scripts.remove_empty</a>
+ &#8226;   <a href="#scripts.remove_old">scripts.remove_old</a>
+ &#8226;   <a href="#scripts.remove_sentence">scripts.remove_sentence</a>
+ &#8226;   <a href="#scripts.split_tmx">scripts.split_tmx</a>
+
+  </div>
+  <div class="import">
 imported by:
     <a href="#app.py">app.py</a>
+ &#8226;   <a href="#scripts.batch_process">scripts.batch_process</a>
+ &#8226;   <a href="#scripts.clean_mt">scripts.clean_mt</a>
+ &#8226;   <a href="#scripts.clean_tmx_for_mt">scripts.clean_tmx_for_mt</a>
+ &#8226;   <a href="#scripts.convert_termweb">scripts.convert_termweb</a>
+ &#8226;   <a href="#scripts.convert_vatv">scripts.convert_vatv</a>
+ &#8226;   <a href="#scripts.count_creation_dates">scripts.count_creation_dates</a>
+ &#8226;   <a href="#scripts.count_last_usage">scripts.count_last_usage</a>
+ &#8226;   <a href="#scripts.extract_ntds">scripts.extract_ntds</a>
+ &#8226;   <a href="#scripts.extract_translations">scripts.extract_translations</a>
+ &#8226;   <a href="#scripts.find_date_duplicates">scripts.find_date_duplicates</a>
+ &#8226;   <a href="#scripts.merge_tmx">scripts.merge_tmx</a>
+ &#8226;   <a href="#scripts.remove_duplicates">scripts.remove_duplicates</a>
+ &#8226;   <a href="#scripts.remove_empty">scripts.remove_empty</a>
+ &#8226;   <a href="#scripts.remove_old">scripts.remove_old</a>
+ &#8226;   <a href="#scripts.remove_sentence">scripts.remove_sentence</a>
+ &#8226;   <a href="#scripts.split_tmx">scripts.split_tmx</a>
+ &#8226;   <a href="#scripts.tmx_utils">scripts.tmx_utils</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="scripts.batch_process"></a>
+  <a target="code" href="///C:/Users/bjcor/Desktop/Workday/TM%20Cleanup/Cursor/scripts/batch_process.py" type="text/plain"><tt>scripts.batch_process</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#PythonTmx">PythonTmx</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#logging">logging</a>
+ &#8226;   <a href="#multiprocessing">multiprocessing</a>
+ &#8226;   <a href="#multiprocessing.Pool">multiprocessing.Pool</a>
+ &#8226;   <a href="#os">os</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#pickle">pickle</a>
+ &#8226;   <a href="#re">re</a>
+ &#8226;   <a href="#scripts">scripts</a>
+ &#8226;   <a href="#scripts.clean_mt">scripts.clean_mt</a>
+ &#8226;   <a href="#scripts.extract_ntds">scripts.extract_ntds</a>
+ &#8226;   <a href="#scripts.remove_duplicates">scripts.remove_duplicates</a>
+ &#8226;   <a href="#scripts.remove_empty">scripts.remove_empty</a>
+ &#8226;   <a href="#scripts.remove_old">scripts.remove_old</a>
+ &#8226;   <a href="#scripts.remove_sentence">scripts.remove_sentence</a>
+ &#8226;   <a href="#scripts.tmx_utils">scripts.tmx_utils</a>
+ &#8226;   <a href="#shutil">shutil</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#app.py">app.py</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="scripts.clean_mt"></a>
+  <a target="code" href="///C:/Users/bjcor/Desktop/Workday/TM%20Cleanup/Cursor/scripts/clean_mt.py" type="text/plain"><tt>scripts.clean_mt</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#PythonTmx">PythonTmx</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#logging">logging</a>
+ &#8226;   <a href="#os">os</a>
+ &#8226;   <a href="#re">re</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#scripts.batch_process">scripts.batch_process</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="scripts.clean_tmx_for_mt"></a>
+  <a target="code" href="///C:/Users/bjcor/Desktop/Workday/TM%20Cleanup/Cursor/scripts/clean_tmx_for_mt.py" type="text/plain"><tt>scripts.clean_tmx_for_mt</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#PythonTmx">PythonTmx</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#logging">logging</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#re">re</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#app.py">app.py</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="scripts.convert_termweb"></a>
+  <a target="code" href="///C:/Users/bjcor/Desktop/Workday/TM%20Cleanup/Cursor/scripts/convert_termweb.py" type="text/plain"><tt>scripts.convert_termweb</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#PythonTmx">PythonTmx</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#logging">logging</a>
+ &#8226;   <a href="#openpyxl">openpyxl</a>
+ &#8226;   <a href="#openpyxl.utils">openpyxl.utils</a>
+ &#8226;   <a href="#os">os</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#app.py">app.py</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="scripts.convert_vatv"></a>
+  <a target="code" href="///C:/Users/bjcor/Desktop/Workday/TM%20Cleanup/Cursor/scripts/convert_vatv.py" type="text/plain"><tt>scripts.convert_vatv</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#PythonTmx">PythonTmx</a>
+ &#8226;   <a href="#csv">csv</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#logging">logging</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#scripts">scripts</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#app.py">app.py</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="scripts.count_creation_dates"></a>
+  <a target="code" href="///C:/Users/bjcor/Desktop/Workday/TM%20Cleanup/Cursor/scripts/count_creation_dates.py" type="text/plain"><tt>scripts.count_creation_dates</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#PythonTmx">PythonTmx</a>
+ &#8226;   <a href="#collections">collections</a>
+ &#8226;   <a href="#csv">csv</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#logging">logging</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#app.py">app.py</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="scripts.count_last_usage"></a>
+  <a target="code" href="///C:/Users/bjcor/Desktop/Workday/TM%20Cleanup/Cursor/scripts/count_last_usage.py" type="text/plain"><tt>scripts.count_last_usage</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#PythonTmx">PythonTmx</a>
+ &#8226;   <a href="#collections">collections</a>
+ &#8226;   <a href="#csv">csv</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#logging">logging</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#app.py">app.py</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="scripts.extract_ntds"></a>
+  <a target="code" href="///C:/Users/bjcor/Desktop/Workday/TM%20Cleanup/Cursor/scripts/extract_ntds.py" type="text/plain"><tt>scripts.extract_ntds</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#PythonTmx">PythonTmx</a>
+ &#8226;   <a href="#collections">collections</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#logging">logging</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#app.py">app.py</a>
+ &#8226;   <a href="#scripts">scripts</a>
+ &#8226;   <a href="#scripts.batch_process">scripts.batch_process</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="scripts.extract_translations"></a>
+  <a target="code" href="///C:/Users/bjcor/Desktop/Workday/TM%20Cleanup/Cursor/scripts/extract_translations.py" type="text/plain"><tt>scripts.extract_translations</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#PythonTmx">PythonTmx</a>
+ &#8226;   <a href="#csv">csv</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#logging">logging</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#app.py">app.py</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="scripts.find_date_duplicates"></a>
+  <a target="code" href="///C:/Users/bjcor/Desktop/Workday/TM%20Cleanup/Cursor/scripts/find_date_duplicates.py" type="text/plain"><tt>scripts.find_date_duplicates</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#collections">collections</a>
+ &#8226;   <a href="#csv">csv</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#os">os</a>
+ &#8226;   <a href="#scripts">scripts</a>
+ &#8226;   <a href="#xml.etree.ElementTree">xml.etree.ElementTree</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#app.py">app.py</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="scripts.merge_tmx"></a>
+  <a target="code" href="///C:/Users/bjcor/Desktop/Workday/TM%20Cleanup/Cursor/scripts/merge_tmx.py" type="text/plain"><tt>scripts.merge_tmx</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#PythonTmx">PythonTmx</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#logging">logging</a>
+ &#8226;   <a href="#os">os</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#scripts">scripts</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#app.py">app.py</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="scripts.remove_duplicates"></a>
+  <a target="code" href="///C:/Users/bjcor/Desktop/Workday/TM%20Cleanup/Cursor/scripts/remove_duplicates.py" type="text/plain"><tt>scripts.remove_duplicates</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#PythonTmx">PythonTmx</a>
+ &#8226;   <a href="#collections">collections</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#logging">logging</a>
+ &#8226;   <a href="#os">os</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#app.py">app.py</a>
+ &#8226;   <a href="#scripts">scripts</a>
+ &#8226;   <a href="#scripts.batch_process">scripts.batch_process</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="scripts.remove_empty"></a>
+  <a target="code" href="///C:/Users/bjcor/Desktop/Workday/TM%20Cleanup/Cursor/scripts/remove_empty.py" type="text/plain"><tt>scripts.remove_empty</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#PythonTmx">PythonTmx</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#logging">logging</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#scripts">scripts</a>
+ &#8226;   <a href="#scripts.batch_process">scripts.batch_process</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="scripts.remove_old"></a>
+  <a target="code" href="///C:/Users/bjcor/Desktop/Workday/TM%20Cleanup/Cursor/scripts/remove_old.py" type="text/plain"><tt>scripts.remove_old</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#PythonTmx">PythonTmx</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#logging">logging</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#app.py">app.py</a>
+ &#8226;   <a href="#scripts">scripts</a>
+ &#8226;   <a href="#scripts.batch_process">scripts.batch_process</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="scripts.remove_sentence"></a>
+  <a target="code" href="///C:/Users/bjcor/Desktop/Workday/TM%20Cleanup/Cursor/scripts/remove_sentence.py" type="text/plain"><tt>scripts.remove_sentence</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#PythonTmx">PythonTmx</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#logging">logging</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#re">re</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#app.py">app.py</a>
+ &#8226;   <a href="#scripts">scripts</a>
+ &#8226;   <a href="#scripts.batch_process">scripts.batch_process</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="scripts.split_tmx"></a>
+  <a target="code" href="///C:/Users/bjcor/Desktop/Workday/TM%20Cleanup/Cursor/scripts/split_tmx.py" type="text/plain"><tt>scripts.split_tmx</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#PythonTmx">PythonTmx</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#logging">logging</a>
+ &#8226;   <a href="#math">math</a>
+ &#8226;   <a href="#os">os</a>
+ &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#scripts">scripts</a>
+ &#8226;   <a href="#sys">sys</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#app.py">app.py</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="scripts.tmx_utils"></a>
+  <a target="code" href="///C:/Users/bjcor/Desktop/Workday/TM%20Cleanup/Cursor/scripts/tmx_utils.py" type="text/plain"><tt>scripts.tmx_utils</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#PythonTmx">PythonTmx</a>
+ &#8226;   <a href="#scripts">scripts</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#scripts.batch_process">scripts.batch_process</a>
 
   </div>
 
@@ -18292,7 +18839,8 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#multiprocessing.shared_memory">multiprocessing.shared_memory</a>
+    <a href="#app.py">app.py</a>
+ &#8226;   <a href="#multiprocessing.shared_memory">multiprocessing.shared_memory</a>
  &#8226;   <a href="#werkzeug.security">werkzeug.security</a>
 
   </div>
@@ -18389,13 +18937,15 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#argparse">argparse</a>
+    <a href="#app.py">app.py</a>
+ &#8226;   <a href="#argparse">argparse</a>
  &#8226;   <a href="#click._termui_impl">click._termui_impl</a>
  &#8226;   <a href="#click.formatting">click.formatting</a>
  &#8226;   <a href="#click.shell_completion">click.shell_completion</a>
  &#8226;   <a href="#click.testing">click.testing</a>
  &#8226;   <a href="#http.server">http.server</a>
  &#8226;   <a href="#multiprocessing.util">multiprocessing.util</a>
+ &#8226;   <a href="#scripts.batch_process">scripts.batch_process</a>
  &#8226;   <a href="#tarfile">tarfile</a>
  &#8226;   <a href="#tempfile">tempfile</a>
  &#8226;   <a href="#uuid">uuid</a>
@@ -18906,6 +19456,7 @@ imported by:
  &#8226;   <a href="#quopri">quopri</a>
  &#8226;   <a href="#re._compiler">re._compiler</a>
  &#8226;   <a href="#runpy">runpy</a>
+ &#8226;   <a href="#scripts.split_tmx">scripts.split_tmx</a>
  &#8226;   <a href="#selectors">selectors</a>
  &#8226;   <a href="#shlex">shlex</a>
  &#8226;   <a href="#shutil">shutil</a>
@@ -19523,6 +20074,10 @@ imported by:
  &#8226;   <a href="#jinja2.visitor">jinja2.visitor</a>
  &#8226;   <a href="#markupsafe">markupsafe</a>
  &#8226;   <a href="#pdb">pdb</a>
+ &#8226;   <a href="#scripts.batch_process">scripts.batch_process</a>
+ &#8226;   <a href="#scripts.convert_vatv">scripts.convert_vatv</a>
+ &#8226;   <a href="#scripts.merge_tmx">scripts.merge_tmx</a>
+ &#8226;   <a href="#scripts.split_tmx">scripts.split_tmx</a>
  &#8226;   <a href="#typing_extensions">typing_extensions</a>
  &#8226;   <a href="#werkzeug">werkzeug</a>
  &#8226;   <a href="#werkzeug._internal">werkzeug._internal</a>
@@ -21875,10 +22430,10 @@ imports:
   <div class="import">
 imported by:
     <a href="#_elementtree">_elementtree</a>
- &#8226;   <a href="#app.py">app.py</a>
  &#8226;   <a href="#et_xmlfile.incremental_tree">et_xmlfile.incremental_tree</a>
  &#8226;   <a href="#et_xmlfile.xmlfile">et_xmlfile.xmlfile</a>
  &#8226;   <a href="#openpyxl.xml.functions">openpyxl.xml.functions</a>
+ &#8226;   <a href="#scripts.find_date_duplicates">scripts.find_date_duplicates</a>
  &#8226;   <a href="#xml.etree">xml.etree</a>
  &#8226;   <a href="#xml.etree.ElementInclude">xml.etree.ElementInclude</a>
  &#8226;   <a href="#xml.etree.cElementTree">xml.etree.cElementTree</a>
@@ -22157,7 +22712,8 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#importlib.metadata">importlib.metadata</a>
+    <a href="#app.py">app.py</a>
+ &#8226;   <a href="#importlib.metadata">importlib.metadata</a>
  &#8226;   <a href="#importlib.resources.readers">importlib.resources.readers</a>
  &#8226;   <a href="#jinja2.environment">jinja2.environment</a>
  &#8226;   <a href="#openpyxl.reader.excel">openpyxl.reader.excel</a>

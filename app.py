@@ -29,21 +29,17 @@ project_root = os.path.dirname(os.path.abspath(__file__))
 tmx_path = os.path.join(project_root, 'tmx', 'Lib', 'site-packages')
 pythontmx_path = os.path.join(tmx_path, 'PythonTmx')
 
-print(f"Looking for PythonTmx at: {pythontmx_path}")  # Debug print
-print(f"Directory exists: {os.path.exists(pythontmx_path)}")  # Debug print
-
-if tmx_path not in sys.path:
-    sys.path.insert(0, tmx_path)
+# Add both paths to sys.path before any imports
 if pythontmx_path not in sys.path:
     sys.path.insert(0, pythontmx_path)
+if tmx_path not in sys.path:
+    sys.path.insert(0, tmx_path)
 
+# Import PythonTmx first before other imports
 try:
     import PythonTmx
-    print("Successfully imported PythonTmx")  # Debug print
+    logger.info("Successfully imported PythonTmx")
 except ImportError as e:
-    print(f"Failed to import PythonTmx from {pythontmx_path}")
-    print(f"Current sys.path: {sys.path}")
-    print(f"Directory contents: {os.listdir(tmx_path)}")  # Debug print
     logger.critical(f"Failed to import PythonTmx: {e}")
     raise
 
@@ -139,77 +135,96 @@ def before_request():
     if not session.get('csrf_token'):
         session['csrf_token'] = secrets.token_hex(32)
 
-# Update the operations mapping to match the imported function names
+def handle_tmx_operation(func):
+    """Decorator to handle TMX operations and their errors"""
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except PythonTmx.TmxError as e:
+            logger.error(f"TMX processing error in {func.__name__}: {e}")
+            raise ValueError(f"TMX processing error: {str(e)}")
+        except Exception as e:
+            logger.error(f"Unexpected error in {func.__name__}: {e}")
+            raise
+    return wrapper
+
+# Update OPERATIONS to use the decorator
 OPERATIONS = {
-    'remove_old': remove_old_tus,
-    'empty_targets': empty_targets,
-    'true_duplicates': find_true_duplicates,
-    'non_true_duplicates': extract_non_true_duplicates,
-    'sentence_level': find_sentence_level_segments,
-    'convert_vatv': convert_vatv_to_tmx,
-    'convert_termweb': convert_termweb_to_tmx,
-    'count_creation': count_creation_dates,
-    'count_usage': count_last_usage_dates,
-    'extract_translations': extract_translations,
-    'split_language': split_by_language,
-    'split_size': split_by_size,
-    'batch_process': batch_process_1_5
+    'convert_vatv': handle_tmx_operation(convert_vatv_to_tmx),
+    'convert_termweb': handle_tmx_operation(convert_termweb_to_tmx),
+    'remove_empty': handle_tmx_operation(empty_targets),
+    'find_duplicates': handle_tmx_operation(find_true_duplicates),
+    'non_true_duplicates': handle_tmx_operation(extract_non_true_duplicates),
+    'clean_mt': handle_tmx_operation(clean_tmx_for_mt),
+    'merge_tmx': handle_tmx_operation(merge_tmx_files),
+    'split_language': handle_tmx_operation(split_by_language),
+    'split_size': handle_tmx_operation(split_by_size),
+    'batch_process_tms': handle_tmx_operation(batch_process_1_5),
+    'batch_process_mt': handle_tmx_operation(batch_process_1_5_9)
 }
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
-        # Add error handling and logging
         try:
+            # Validate file
+            if 'file' not in request.files:
+                flash('No file uploaded', 'error')
+                return redirect(url_for('index'))
+                
             file = request.files['file']
-            if file and file.filename:
-                operation = request.form.get('operation')
-                # Add logging
-                app.logger.info(f"Processing file: {file.filename} with operation: {operation}")
+            if not file or not file.filename:
+                flash('No file selected', 'error')
+                return redirect(url_for('index'))
                 
-                # Save file to temp location
-                filename = secure_filename(file.filename)
-                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                file.save(filepath)
+            if not allowed_file(file.filename):
+                flash('Invalid file type', 'error')
+                return redirect(url_for('index'))
+
+            # Get operation
+            operation = request.form.get('operation')
+            if not operation:
+                flash('No operation selected', 'error')
+                return redirect(url_for('index'))
+
+            # Save and process file
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
+            
+            try:
+                result = process_file(operation, filepath)
                 
-                # Process file
-                result_file = process_file(operation, filepath)
-                
-                return send_file(
-                    result_file,
-                    as_attachment=True,
-                    download_name=f'processed_{filename}'
-                )
+                # Handle different result types
+                if isinstance(result, io.BytesIO):
+                    return send_file(
+                        result,
+                        mimetype='application/zip',
+                        as_attachment=True,
+                        download_name=f'{operation}_{filename}.zip'
+                    )
+                else:
+                    return send_file(
+                        result,
+                        as_attachment=True,
+                        download_name=f'{operation}_{filename}'
+                    )
+                    
+            finally:
+                # Clean up input file
+                try:
+                    if os.path.exists(filepath):
+                        os.remove(filepath)
+                except Exception as e:
+                    logger.warning(f"Could not remove input file {filepath}: {e}")
+                    
         except Exception as e:
-            app.logger.error(f"Error processing file: {str(e)}")
+            logger.error(f"Error processing request: {e}")
             flash(f"Error processing file: {str(e)}", 'error')
             return redirect(url_for('index'))
-            
-        finally:
-            # Clean up working directory
-            try:
-                if upload_dir.exists():
-                    shutil.rmtree(upload_dir)
-                    logger.info(f"Cleaned up working directory: {upload_dir}")
-            except Exception as e:
-                logger.error(f"Error cleaning up directory {upload_dir}: {e}")
 
-    # For GET requests, render the template with operations list
-    operations = {
-        'convert_vatv': 'Convert VATV CSV',
-        'convert_termweb': 'Convert TermWeb Excel',
-        'remove_empty': 'Remove Empty Targets',
-        'find_duplicates': 'Find True Duplicates',
-        'non_true_duplicates': 'Find Non-True Duplicates',
-        'clean_mt': 'Clean TMX for MT',
-        'merge_tmx': 'Merge TMX Files',
-        'split_language': 'Split TMX by Language',
-        'split_size': 'Split TMX by Size',
-        'batch_process_tms': 'Batch Clean TMX for TMS',
-        'batch_process_mt': 'Batch Clean TMX for MT'
-    }
-    
-    return render_template('index.html', operations=operations)
+    # GET request - render template
+    return render_template('index.html', operations=OPERATIONS)
 
 @app.errorhandler(413)
 def too_large(e):
@@ -224,6 +239,40 @@ def internal_error(e):
     logger.error(f"Internal server error: {e}")
     flash('An internal error occurred. Please try again later.', 'error')
     return redirect(url_for('index'))
+
+def process_file(operation: str, filepath: str) -> str:
+    """Process the uploaded file with the selected operation"""
+    try:
+        if operation not in OPERATIONS:
+            raise ValueError(f"Unknown operation: {operation}")
+        
+        logger.info(f"Starting operation {operation} on file {filepath}")
+        
+        # Process the file
+        result = OPERATIONS[operation](filepath)
+        
+        # If result is a string (file path), return it
+        if isinstance(result, str):
+            if not os.path.exists(result):
+                raise FileNotFoundError(f"Operation produced no output file at {result}")
+            return result
+            
+        # If result is a list of files, zip them
+        elif isinstance(result, list):
+            memory_file = io.BytesIO()
+            with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+                for file_path in result:
+                    if os.path.exists(file_path):
+                        zf.write(file_path, os.path.basename(file_path))
+            memory_file.seek(0)
+            return memory_file
+            
+        else:
+            raise ValueError(f"Operation {operation} returned unexpected type: {type(result)}")
+            
+    except Exception as e:
+        logger.error(f"Error processing file {filepath} with operation {operation}: {e}")
+        raise
 
 if __name__ == '__main__':
     try:

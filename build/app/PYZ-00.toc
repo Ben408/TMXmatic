@@ -1467,6 +1467,78 @@
   ('random', 'C:\\Python311\\Lib\\random.py', 'PYMODULE'),
   ('rlcompleter', 'C:\\Python311\\Lib\\rlcompleter.py', 'PYMODULE'),
   ('runpy', 'C:\\Python311\\Lib\\runpy.py', 'PYMODULE'),
+  ('scripts',
+   'C:\\Users\\bjcor\\Desktop\\Workday\\TM '
+   'Cleanup\\Cursor\\scripts\\__init__.py',
+   'PYMODULE'),
+  ('scripts.batch_process',
+   'C:\\Users\\bjcor\\Desktop\\Workday\\TM '
+   'Cleanup\\Cursor\\scripts\\batch_process.py',
+   'PYMODULE'),
+  ('scripts.clean_mt',
+   'C:\\Users\\bjcor\\Desktop\\Workday\\TM '
+   'Cleanup\\Cursor\\scripts\\clean_mt.py',
+   'PYMODULE'),
+  ('scripts.clean_tmx_for_mt',
+   'C:\\Users\\bjcor\\Desktop\\Workday\\TM '
+   'Cleanup\\Cursor\\scripts\\clean_tmx_for_mt.py',
+   'PYMODULE'),
+  ('scripts.convert_termweb',
+   'C:\\Users\\bjcor\\Desktop\\Workday\\TM '
+   'Cleanup\\Cursor\\scripts\\convert_termweb.py',
+   'PYMODULE'),
+  ('scripts.convert_vatv',
+   'C:\\Users\\bjcor\\Desktop\\Workday\\TM '
+   'Cleanup\\Cursor\\scripts\\convert_vatv.py',
+   'PYMODULE'),
+  ('scripts.count_creation_dates',
+   'C:\\Users\\bjcor\\Desktop\\Workday\\TM '
+   'Cleanup\\Cursor\\scripts\\count_creation_dates.py',
+   'PYMODULE'),
+  ('scripts.count_last_usage',
+   'C:\\Users\\bjcor\\Desktop\\Workday\\TM '
+   'Cleanup\\Cursor\\scripts\\count_last_usage.py',
+   'PYMODULE'),
+  ('scripts.extract_ntds',
+   'C:\\Users\\bjcor\\Desktop\\Workday\\TM '
+   'Cleanup\\Cursor\\scripts\\extract_ntds.py',
+   'PYMODULE'),
+  ('scripts.extract_translations',
+   'C:\\Users\\bjcor\\Desktop\\Workday\\TM '
+   'Cleanup\\Cursor\\scripts\\extract_translations.py',
+   'PYMODULE'),
+  ('scripts.find_date_duplicates',
+   'C:\\Users\\bjcor\\Desktop\\Workday\\TM '
+   'Cleanup\\Cursor\\scripts\\find_date_duplicates.py',
+   'PYMODULE'),
+  ('scripts.merge_tmx',
+   'C:\\Users\\bjcor\\Desktop\\Workday\\TM '
+   'Cleanup\\Cursor\\scripts\\merge_tmx.py',
+   'PYMODULE'),
+  ('scripts.remove_duplicates',
+   'C:\\Users\\bjcor\\Desktop\\Workday\\TM '
+   'Cleanup\\Cursor\\scripts\\remove_duplicates.py',
+   'PYMODULE'),
+  ('scripts.remove_empty',
+   'C:\\Users\\bjcor\\Desktop\\Workday\\TM '
+   'Cleanup\\Cursor\\scripts\\remove_empty.py',
+   'PYMODULE'),
+  ('scripts.remove_old',
+   'C:\\Users\\bjcor\\Desktop\\Workday\\TM '
+   'Cleanup\\Cursor\\scripts\\remove_old.py',
+   'PYMODULE'),
+  ('scripts.remove_sentence',
+   'C:\\Users\\bjcor\\Desktop\\Workday\\TM '
+   'Cleanup\\Cursor\\scripts\\remove_sentence.py',
+   'PYMODULE'),
+  ('scripts.split_tmx',
+   'C:\\Users\\bjcor\\Desktop\\Workday\\TM '
+   'Cleanup\\Cursor\\scripts\\split_tmx.py',
+   'PYMODULE'),
+  ('scripts.tmx_utils',
+   'C:\\Users\\bjcor\\Desktop\\Workday\\TM '
+   'Cleanup\\Cursor\\scripts\\tmx_utils.py',
+   'PYMODULE'),
   ('secrets', 'C:\\Python311\\Lib\\secrets.py', 'PYMODULE'),
   ('selectors', 'C:\\Python311\\Lib\\selectors.py', 'PYMODULE'),
   ('shlex', 'C:\\Python311\\Lib\\shlex.py', 'PYMODULE'),
