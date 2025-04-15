@@ -6,3 +6,9 @@
 2025-02-27 15:14:42,911 - INFO -  * Debugger PIN: 441-027-463
 2025-02-27 15:16:17,464 - INFO - 127.0.0.1 - - [27/Feb/2025 15:16:17] "GET / HTTP/1.1" 200 -
 2025-02-27 15:16:17,505 - INFO - 127.0.0.1 - - [27/Feb/2025 15:16:17] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2025-03-12 09:36:41 - INFO - [__main__] - Successfully imported PythonTmx
+2025-03-12 09:36:41 - INFO - [__main__] - Starting Flask application
+2025-03-12 09:36:41 - INFO - [werkzeug] - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+2025-03-12 09:36:41 - INFO - [werkzeug] - [33mPress CTRL+C to quit[0m
+2025-03-17 15:40:29 - INFO - [werkzeug] - 127.0.0.1 - - [17/Mar/2025 15:40:29] "GET / HTTP/1.1" 200 -

@@ -9,3 +9,4 @@
 2025-03-05 09:35:20 - INFO - [__main__] - Cleaned up working directory: C:\Users\bjcor\Desktop\Workday\TM Cleanup\Cursor\uploads
 2025-03-05 09:35:20 - INFO - [werkzeug] - 127.0.0.1 - - [05/Mar/2025 09:35:20] "[32mPOST / HTTP/1.1[0m" 302 -
 2025-03-05 09:35:20 - INFO - [werkzeug] - 127.0.0.1 - - [05/Mar/2025 09:35:20] "GET / HTTP/1.1" 200 -
+2025-03-11 13:05:43 - INFO - [werkzeug] - 127.0.0.1 - - [11/Mar/2025 13:05:43] "GET / HTTP/1.1" 200 -

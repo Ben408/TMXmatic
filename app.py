@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_file, redirect, url_for, flash, session
+from flask import Flask, render_template, request, send_file, redirect, url_for, flash, session, jsonify, make_response
 import os
 import sys
 import logging
@@ -14,6 +14,8 @@ from scripts.convert_vatv import process_csv_file
 from scripts.convert_termweb import process_excel_file
 from scripts.batch_process import batch_process_1_5, batch_process_1_5_9
 from scripts.merge_tmx import merge_tmx_files
+from scripts.xliff_operations import leverage_tmx_into_xliff, check_empty_targets
+import json
 
 # Configure logging before anything else
 logging.basicConfig(
@@ -273,6 +275,81 @@ def process_file(operation: str, filepath: str) -> str:
     except Exception as e:
         logger.error(f"Error processing file {filepath} with operation {operation}: {e}")
         raise
+
+@app.route('/api/xliff_tmx_leverage', methods=['POST'])
+def xliff_tmx_leverage():
+    try:
+        if 'file' not in request.files or 'tmx_file' not in request.files:
+            logger.error("Missing required files")
+            return jsonify({'error': "Both XLIFF and TMX files are required"}), 400
+            
+        xliff_file = request.files['file']
+        tmx_file = request.files['tmx_file']
+        
+        if not xliff_file.filename or not tmx_file.filename:
+            logger.error("Empty file names")
+            return jsonify({'error': "Both XLIFF and TMX files must be selected"}), 400
+            
+        # Save uploaded files
+        xliff_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(xliff_file.filename))
+        tmx_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(tmx_file.filename))
+        
+        xliff_file.save(xliff_path)
+        tmx_file.save(tmx_path)
+        
+        try:
+            # Process the files
+            output_file, stats = leverage_tmx_into_xliff(tmx_path, xliff_path)
+            
+            # Return both the file and stats in the response
+            response = make_response(send_file(
+                output_file,
+                as_attachment=True,
+                download_name=os.path.basename(output_file),
+                mimetype='application/x-xliff+xml'
+            ))
+            response.headers['X-Stats'] = json.dumps(stats)
+            return response
+            
+        finally:
+            # Clean up uploaded files
+            for filepath in [xliff_path, tmx_path, output_file]:
+                try:
+                    if os.path.exists(filepath):
+                        os.remove(filepath)
+                except Exception as e:
+                    logger.warning(f"Could not remove temporary file {filepath}: {e}")
+                    
+    except Exception as e:
+        logger.error(f"Error in xliff_tmx_leverage: {e}")
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/api/xliff_check', methods=['POST'])
+def xliff_check():
+    try:
+        if 'file' not in request.files:
+            logger.error("No file provided")
+            return jsonify({'error': "No file provided"}), 400
+            
+        file = request.files['file']
+        if not file.filename:
+            logger.error("No file selected")
+            return jsonify({'error': "No file selected"}), 400
+            
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(file.filename))
+        file.save(filepath)
+        
+        try:
+            stats = check_empty_targets(filepath)
+            logger.info(f"XLIFF check completed. Stats: {stats}")
+            return jsonify(stats)
+        finally:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+                
+    except Exception as e:
+        logger.error(f"Error in xliff_check: {e}")
+        return jsonify({'error': str(e)}), 400
 
 if __name__ == '__main__':
     try:
