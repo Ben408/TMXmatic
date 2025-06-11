@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, send_file, redirect, url_for, flash, session, jsonify, make_response
+from flask_cors import CORS
 import os
 import sys
 import logging
@@ -15,6 +16,7 @@ from scripts.convert_termweb import process_excel_file
 from scripts.batch_process import batch_process_1_5, batch_process_1_5_9
 from scripts.merge_tmx import merge_tmx_files
 from scripts.xliff_operations import leverage_tmx_into_xliff, check_empty_targets
+from scripts.clean_tmx_for_mt import clean_tmx_for_mt
 import json
 
 # Configure logging before anything else
@@ -73,6 +75,9 @@ else:
     app = Flask(__name__,
                 template_folder='templates',
                 static_folder='static')
+
+# Enable CORS
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Application Configuration
 app.config.update(
@@ -142,9 +147,9 @@ def handle_tmx_operation(func):
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except PythonTmx.TmxError as e:
-            logger.error(f"TMX processing error in {func.__name__}: {e}")
-            raise ValueError(f"TMX processing error: {str(e)}")
+        #except PythonTmx.TmxError as e:
+        #    logger.error(f"TMX processing error in {func.__name__}: {e}")
+        #    raise ValueError(f"TMX processing error: {str(e)}")
         except Exception as e:
             logger.error(f"Unexpected error in {func.__name__}: {e}")
             raise
@@ -165,6 +170,82 @@ OPERATIONS = {
     'batch_process_mt': handle_tmx_operation(batch_process_1_5_9)
 }
 
+@app.route('/queue/', methods=['GET', 'POST'])
+def queue():
+    if request.method == 'POST':
+        try:
+            data = request.form
+            operations = json.loads(data.get('operations', '[]'))
+            files = request.files.getlist('file')
+            result = None
+            garbage = []
+            
+            file_list = []
+            for file in files:
+                filename = secure_filename(file.filename)
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file_list.append(filepath)
+                file.save(filepath)
+
+            for operation in operations:
+                result_list = None
+                if result == None:
+                    result_list = process_file(operation, file_list[0])
+                else:
+                    result_list = process_file(operation, result)
+                if type(result_list) == tuple and len(result_list) > 1 :
+                    result = result_list[0]
+                    garbage.append(result_list[1])
+                else:
+                    result = result_list
+                
+
+            result_list2 = [result]
+            result_list2.extend(garbage)
+
+            result_list = tuple(result_list)
+            
+            memory_file = io.BytesIO()
+            with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+                if operation in ('convert_vatv','clean_mt','merge_tmx'):
+                    if type(result_list) == str:
+                        zf.write(result_list, os.path.basename(result_list))
+                    else:
+                        file_path = result_list[0]
+                        zf.write(file_path, os.path.basename(file_path))
+                else:
+                    for result in result_list:
+                        if os.path.exists(result):
+                            zf.write(result, os.path.basename(result))
+                
+            memory_file.seek(0)
+
+            # Handle different result types
+            if isinstance(memory_file, io.BytesIO):
+                return send_file(
+                    memory_file,
+                    mimetype='application/zip',
+                    as_attachment=True,
+                    download_name=f'{operation}_multiple.zip'
+                )
+            else:
+                return send_file(
+                    memory_file,
+                    as_attachment=True,
+                    download_name=f'{operation}_multiple'
+                )
+
+
+
+        except Exception as e:
+            logger.error(f"Error processing queue: {e}")
+            return jsonify({'error': str(e)}), 400
+
+
+
+
+
+
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
@@ -173,15 +254,19 @@ def index():
             if 'file' not in request.files:
                 flash('No file uploaded', 'error')
                 return redirect(url_for('index'))
-                
-            file = request.files['file']
-            if not file or not file.filename:
-                flash('No file selected', 'error')
-                return redirect(url_for('index'))
-                
-            if not allowed_file(file.filename):
-                flash('Invalid file type', 'error')
-                return redirect(url_for('index'))
+            
+            
+            
+            files = request.files.getlist('file')
+            for file in files:
+                if not files or not file.filename:
+                    flash('No file selected', 'error')
+                    return redirect(url_for('index'))
+
+            for file in files:    
+                if not allowed_file(file.filename):
+                    flash('Invalid file type', 'error')
+                    return redirect(url_for('index'))
 
             # Get operation
             operation = request.form.get('operation')
@@ -190,24 +275,61 @@ def index():
                 return redirect(url_for('index'))
 
             # Save and process file
-            filename = secure_filename(file.filename)
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(filepath)
-            
+            file_list = []
+            print("archivos: "+ str(len(files)))
+            print(files)
+            for file in files:
+                filename = secure_filename(file.filename)
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file_list.append(filepath)
+                file.save(filepath)
             try:
-                result = process_file(operation, filepath)
+                result_list = None
+                if len(file_list) > 1:
+                    if operation == 'merge_tmx':
+                        result_list = process_file(operation, file_list)
+                    elif operation == 'split_size':
+                        result_list = split_by_size(file_list, request.form.get('size'))
+                    else:
+                        result_list = []
+                        for file in file_list:
+                            result = process_file(operation, file)
+                            result_list.append(result)         
+                else:
+                    if operation == 'split_size':
+                        result_list = split_by_size(file_list[0], request.form.get('size'))
+                    else:
+                        result_list = process_file(operation, file_list[0])
+                        
+
                 
+
+                memory_file = io.BytesIO()
+                with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+                    if operation in ('convert_vatv','clean_mt','merge_tmx'):
+                        if type(result_list) == str:
+                            zf.write(result_list, os.path.basename(result_list))
+                        else:
+                            file_path = result_list[0]
+                            zf.write(file_path, os.path.basename(file_path))
+                    else:
+                        for result in result_list:
+                            if os.path.exists(result):
+                                zf.write(result, os.path.basename(result))
+                    
+                memory_file.seek(0)
+
                 # Handle different result types
-                if isinstance(result, io.BytesIO):
+                if isinstance(memory_file, io.BytesIO):
                     return send_file(
-                        result,
+                        memory_file,
                         mimetype='application/zip',
                         as_attachment=True,
                         download_name=f'{operation}_{filename}.zip'
                     )
                 else:
                     return send_file(
-                        result,
+                        memory_file,
                         as_attachment=True,
                         download_name=f'{operation}_{filename}'
                     )
@@ -260,14 +382,14 @@ def process_file(operation: str, filepath: str) -> str:
             return result
             
         # If result is a list of files, zip them
-        elif isinstance(result, list):
-            memory_file = io.BytesIO()
-            with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-                for file_path in result:
-                    if os.path.exists(file_path):
-                        zf.write(file_path, os.path.basename(file_path))
-            memory_file.seek(0)
-            return memory_file
+        elif isinstance(result, tuple):
+            #memory_file = io.BytesIO()
+            #with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+            #    for file_path in result:
+            #        if os.path.exists(file_path):
+            #            zf.write(file_path, os.path.basename(file_path))
+            #memory_file.seek(0)
+            return result
             
         else:
             raise ValueError(f"Operation {operation} returned unexpected type: {type(result)}")
@@ -278,13 +400,19 @@ def process_file(operation: str, filepath: str) -> str:
 
 @app.route('/api/xliff_tmx_leverage', methods=['POST'])
 def xliff_tmx_leverage():
+    logger.info("Received request to /api/xliff_tmx_leverage")
     try:
+        operation = request.form.get('operation')
+        logger.info(f"Operation: {operation}")
+        
         if 'file' not in request.files or 'tmx_file' not in request.files:
             logger.error("Missing required files")
             return jsonify({'error': "Both XLIFF and TMX files are required"}), 400
             
         xliff_file = request.files['file']
         tmx_file = request.files['tmx_file']
+        
+        logger.info(f"Received files: XLIFF={xliff_file.filename}, TMX={tmx_file.filename}")
         
         if not xliff_file.filename or not tmx_file.filename:
             logger.error("Empty file names")
@@ -326,12 +454,17 @@ def xliff_tmx_leverage():
 
 @app.route('/api/xliff_check', methods=['POST'])
 def xliff_check():
+    logger.info("Received request to /api/xliff_check")
     try:
+        operation = request.form.get('operation')
+        logger.info(f"Operation: {operation}")
+        
         if 'file' not in request.files:
             logger.error("No file provided")
             return jsonify({'error': "No file provided"}), 400
             
         file = request.files['file']
+        logger.info(f"Received file: {file.filename}")
         if not file.filename:
             logger.error("No file selected")
             return jsonify({'error': "No file selected"}), 400
@@ -355,8 +488,8 @@ if __name__ == '__main__':
     try:
         logger.info("Starting Flask application")
         print("Starting TMX Processing Tool...")
-        print("Access the tool at http://localhost:5000")
-        app.run(debug=False, port=5000, host='127.0.0.1')
+        print("Access the tool at http://127.0.0.1:5000")
+        app.run(debug=True, port=5000, host='127.0.0.1')
     except Exception as e:
         logger.error(f"Error starting application: {e}")
         print(f"Error: {str(e)}")

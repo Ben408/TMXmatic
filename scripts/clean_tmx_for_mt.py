@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 import logging
 import re
+import lxml.etree as etree
 
 logger = logging.getLogger(__name__)
 
@@ -26,21 +27,21 @@ def clean_tmx_for_mt(file_path: str) -> str:
         # Create output path
         input_path = Path(file_path)
         output_path = input_path.parent / f"mt_clean_{input_path.name}"
-
-        # Load TMX file
-        tmx = PythonTmx.Tmx(str(input_path))
+      
         
+        # Load TMX file
+        tm : etree._ElementTree = etree.parse(input_path, etree.XMLParser(encoding="utf-8"))
+        tmx_root: etree._Element = tm.getroot()
+        tmx: PythonTmx.TmxElement = PythonTmx.from_element(tmx_root)
+        
+
         # Create clean TMX
-        clean_tmx = PythonTmx.Tmx()
-        clean_tmx.header.srclang = tmx.header.srclang
-        clean_tmx.header.segtype = tmx.header.segtype
-        clean_tmx.header.adminlang = tmx.header.adminlang
+        clean_tmx = PythonTmx.Tmx(header = tmx.header)
         clean_tmx.header.creationtool = "TMX MT Cleaner"
         clean_tmx.header.creationtoolversion = "1.0"
-        clean_tmx.header.creationdate = datetime.now().strftime("%Y%m%dT%H%M%SZ")
 
         # Compile regex patterns
-        tag_pattern = re.compile(r'<[^>]+>')
+        tag_pattern = re.compile(r'(<[^>]+>|(Ept|Bpt|It|Hi|Ut|Ph)\(.*?\))')
         placeholder_pattern = re.compile(r'\{[0-9]+\}|\[\[.*?\]\]|\{\{.*?\}\}')
         special_chars_pattern = re.compile(r'[^a-zA-Z0-9\s\.,;:!?\'\"\-\(\)\[\]{}]')
         
@@ -50,16 +51,19 @@ def clean_tmx_for_mt(file_path: str) -> str:
         for tu in tmx.tus:
             total_tus += 1
             keep_tu = True
-            source_text = target_text = None
+            source_text = target_text = ""
             
             # Check each TUV
             for tuv in tu.tuvs:
-                if not tuv.seg:
+                if not tuv.content:
                     keep_tu = False
                     break
-                
-                text = tuv.seg.strip()
-                
+                concat_text = ""
+                for part in tuv.content:
+                    if type(part) == str:
+                        concat_text = concat_text + part
+
+                text = concat_text.strip()
                 # Store source/target for comparison
                 if tuv.lang == tmx.header.srclang:
                     source_text = text
@@ -102,8 +106,12 @@ def clean_tmx_for_mt(file_path: str) -> str:
                 clean_tmx.tus.append(tu)
                 kept_tus += 1
 
+
         # Save cleaned TMX
-        clean_tmx.save(str(output_path))
+        new_tmx_root: etree._Element = PythonTmx.to_element(clean_tmx, True)
+        etree.ElementTree(new_tmx_root).write(output_path, encoding="utf-8", xml_declaration=True)
+
+
         
         logger.info(f"Cleaned {total_tus} TUs: kept {kept_tus}, removed {total_tus - kept_tus}")
         return str(output_path)

@@ -1,10 +1,10 @@
 import PythonTmx
-from PythonTmx import from_tmx
 import os
 from datetime import datetime
 from pathlib import Path
 import logging
 from collections import defaultdict
+import lxml.etree as etree
 
 logger = logging.getLogger(__name__)
 
@@ -42,87 +42,89 @@ def find_true_duplicates(file_path: str) -> tuple[str, str]:
         dups_path = output_dir / f"duplicates_{input_path.name}"
 
         # Load TMX file
-        tmx = PythonTmx.Tmx(str(input_path))
+        tm : etree._ElementTree = etree.parse(input_path, etree.XMLParser(encoding="utf-8"))
+        tmx_root: etree._Element = tm.getroot()
+        tmx: PythonTmx.TmxElement = PythonTmx.from_element(tmx_root)
         
+        
+
         # Create TMX files for clean and duplicate TUs
-        clean_tmx = PythonTmx.Tmx()
-        dups_tmx = PythonTmx.Tmx()
+        clean_tmx = PythonTmx.Tmx(header = tmx.header)
+        dups_tmx = PythonTmx.Tmx(header = tmx.header)
+        
         
         # Copy header properties
         for tmx_file in [clean_tmx, dups_tmx]:
-            tmx_file.header.srclang = tmx.header.srclang
-            tmx_file.header.segtype = tmx.header.segtype
-            tmx_file.header.adminlang = tmx.header.adminlang
             tmx_file.header.creationtool = "TMX Cleaner"
             tmx_file.header.creationtoolversion = "1.0"
-            tmx_file.header.creationdate = datetime.now().strftime("%Y%m%dT%H%M%SZ")
 
-        # Group TUs by source and target content
-        content_groups = defaultdict(list)
-        source_lang = tmx.header.srclang
-
-        for tu in tmx.tus:
-            source_text = target_text = None
-            
-            # Extract source and target text
-            for tuv in tu.tuvs:
-                if tuv.lang == source_lang:
-                    source_text = tuv.seg
-                else:
-                    target_text = tuv.seg
-            
-            if source_text and target_text:
-                key = (source_text.strip(), target_text.strip())
-                content_groups[key].append(tu)
-
-        clean_count = dups_count = 0
-
-        # Process each group of duplicates
-        for group in content_groups.values():
-            if len(group) == 1:
-                clean_tmx.tus.append(group[0])
-                clean_count += 1
-                continue
-
-            # Find most recent TU in the group
-            latest_tu = None
-            latest_date = None
-
-            for tu in group:
-                tu_date = None
-                
-                # Check TUVs for dates
-                for tuv in tu.tuvs:
-                    if tuv.changedate:
-                        tu_date = tuv.changedate
-                        break
-                    elif tuv.creationdate:
-                        tu_date = tuv.creationdate
-                        break
-                
-                if tu_date:
-                    if not latest_date or tu_date > latest_date:
-                        latest_date = tu_date
-                        latest_tu = tu
-
-            # If no dates found, keep first TU
-            if not latest_tu:
-                latest_tu = group[0]
-
-            # Add latest to clean, others to duplicates
-            clean_tmx.tus.append(latest_tu)
-            clean_count += 1
-            
-            for tu in group:
-                if tu != latest_tu:
-                    dups_tmx.tus.append(tu)
-                    dups_count += 1
-
-        # Save TMX files
-        clean_tmx.save(str(clean_path))
-        dups_tmx.save(str(dups_path))
         
-        logger.info(f"Processed {clean_count + dups_count} TUs: {clean_count} kept, {dups_count} removed")
+
+
+        clean_tm = []
+        duplicates = []
+
+        newer_values = {}                                       #A dictionary to store the latest instance of every entry
+        source = ""
+        target = ""
+        date = ""
+
+        for tu in tmx:                                      #Loop through every TU in the TMX
+            for tuv in tu.tuvs:                                 #Inside every TU, loop through every TUV (source and target TUVs)
+                if tuv.lang.lower() == "en-us":              #Checks for TUV language, and if it is english, saves the source in the variable "source"
+                    for seg in tuv.content:
+                        source = source + str(seg)              #Assuming the source has tags, this part concatenates each part into a new string
+
+                else:
+                    for seg in tuv.content:                     #Assuming the target has tags, this part concatenates each part into a new string
+                        target = target + str(seg)
+                    if tuv.changedate:
+                        date = tuv.changedate
+                    else:
+                        date = datetime(year=2000, month=1,day=1)
+                        tuv.changedate = date.strftime("%Y%m%dT%H%M%SZ")
+
+            if newer_values.get(source+target):                 #Evaluates if the dictionary contains an entry with the same key (source+target)
+                if newer_values.get(source+target) < date:      #If that key has a value (date) older than the current TU's, the value is updated with the current TU's date
+                    newer_values[source+target] = date
+            else:
+                newer_values[source+target] = date              #If the dictionary does not contain any key as (source+target), creates an
+                                                                #entry with (source+target) as key and date as value
+            source = ""                                          
+            target = ""
+
+        for tu in tmx:                                      #Loop a second time through every TU in the TMX
+            for tuv in tu.tuvs:                                 #Repeats the same assignment of source, target and date as before
+                if tuv.lang.lower() == "en-us":
+                    for seg in tuv.content:
+                        source = source + str(seg)
+                else:
+                    for seg in tuv.content:
+                        target = target + str(seg)
+                    date = tuv.changedate
+
+            if newer_values.get(source+target) == date:         #Attempts to match the current TU's date with the source+target dictionary entry. If
+                                                                #the value matches, the TU is added to the clean_tm list. Otherwise, is considered as
+                                                                #an older TU and added to the duplicates list.
+                clean_tm.append(tu)
+                newer_values.pop(source+target)
+            else:
+                duplicates.append(tu)
+
+            source = ""
+            target = ""
+
+        ## Save TMX files
+        clean_tmx.tus = clean_tm
+        new_tmx_root: etree._Element = PythonTmx.to_element(clean_tmx, True)
+        etree.ElementTree(new_tmx_root).write(clean_path, encoding="utf-8", xml_declaration=True)
+        
+        dups_tmx.tus = duplicates
+        new_tmx_root2: etree._Element = PythonTmx.to_element(dups_tmx, True)
+        etree.ElementTree(new_tmx_root2).write(dups_path, encoding="utf-8", xml_declaration=True)
+        
+        logger.info(f"Processed {len(clean_tm)+ len(duplicates)} TUs: {len(clean_tm)} kept, {len(duplicates)} removed")
+        
         return str(clean_path), str(dups_path)
 
     except Exception as e:

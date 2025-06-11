@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import List, Tuple, Optional
 import PythonTmx
 import re
+import lxml.etree as etree
 
 class BatchProgress:
     def __init__(self):
@@ -217,7 +218,7 @@ def clean_for_mt(tmx_file: str) -> Tuple[PythonTmx.Tmx, List[PythonTmx.Tu], List
             # Process each TUV
             for tuv in tu.tuvs:
                 # Get original text for comparison
-                original_text = ' '.join(str(seg) for seg in tuv.segment)
+                original_text = ' '.join(str(seg) for seg in tuv.content)
                 
                 # Clean the text
                 text = original_text
@@ -225,7 +226,7 @@ def clean_for_mt(tmx_file: str) -> Tuple[PythonTmx.Tmx, List[PythonTmx.Tu], List
                 text = whitespace_pattern.sub(' ', text).strip()  # Normalize whitespace
                 
                 # Store based on language
-                if tuv.xmllang.lower() == "en-us":
+                if tuv.lang.lower() == "en-us":
                     source_text = text
                     original_source = original_text
                 else:
@@ -283,12 +284,12 @@ def clean_for_mt(tmx_file: str) -> Tuple[PythonTmx.Tmx, List[PythonTmx.Tu], List
             
             # Create source TUV
             src_tuv = PythonTmx.Tuv(xmllang="en-us")
-            src_tuv.segment.text = source_text
+            src_tuv.content = source_text
             clean_tu.tuvs.append(src_tuv)
             
             # Create target TUV
-            tgt_tuv = PythonTmx.Tuv(xmllang=tu.tuvs[1].xmllang)
-            tgt_tuv.segment.text = target_text
+            tgt_tuv = PythonTmx.Tuv(xmllang=tu.tuvs[1].lang)
+            tgt_tuv.content = target_text
             clean_tu.tuvs.append(tgt_tuv)
             
             clean_tmx.tus.append(clean_tu)

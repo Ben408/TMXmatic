@@ -2,6 +2,7 @@ import PythonTmx
 from datetime import datetime
 from pathlib import Path
 import logging
+import lxml.etree as etree
 
 logger = logging.getLogger(__name__)
 
@@ -25,20 +26,19 @@ def empty_targets(file_path: str) -> tuple[str, str]:
         empty_path = output_dir / f"empty_{input_path.name}"
 
         # Load TMX file
-        tmx = PythonTmx.Tmx(str(input_path))
-        
+        tm : etree._ElementTree = etree.parse(str(input_path), etree.XMLParser(encoding="utf-8"))
+        tmx_root: etree._Element = tm.getroot()
+        tmx: PythonTmx.TmxElement = PythonTmx.from_element(tmx_root)
+
+
         # Create TMX files for clean and empty TUs
-        clean_tmx = PythonTmx.Tmx()
-        empty_tmx = PythonTmx.Tmx()
+        clean_tmx = PythonTmx.Tmx(header = tmx.header)
+        empty_tmx = PythonTmx.Tmx(header = tmx.header)
         
         # Copy header properties
         for tmx_file in [clean_tmx, empty_tmx]:
-            tmx_file.header.srclang = tmx.header.srclang
-            tmx_file.header.segtype = tmx.header.segtype
-            tmx_file.header.adminlang = tmx.header.adminlang
             tmx_file.header.creationtool = "TMX Cleaner"
             tmx_file.header.creationtoolversion = "1.0"
-            tmx_file.header.creationdate = datetime.now().strftime("%Y%m%dT%H%M%SZ")
 
         clean_count = empty_count = 0
 
@@ -51,7 +51,7 @@ def empty_targets(file_path: str) -> tuple[str, str]:
             source_text = None
             for tuv in tu.tuvs:
                 if tuv.lang == source_lang:
-                    source_text = tuv.seg
+                    source_text = tuv.content
                     break
             
             if source_text:
@@ -59,7 +59,7 @@ def empty_targets(file_path: str) -> tuple[str, str]:
                 for tuv in tu.tuvs:
                     if tuv.lang != source_lang:
                         # Check if target is empty or same as source
-                        if not tuv.seg or tuv.seg.isspace() or tuv.seg == source_text:
+                        if not tuv.content or str(tuv.content).isspace() or tuv.content == source_text:
                             has_empty_target = True
                             break
             
@@ -71,8 +71,15 @@ def empty_targets(file_path: str) -> tuple[str, str]:
                 clean_count += 1
 
         # Save TMX files
-        clean_tmx.save(str(clean_path))
-        empty_tmx.save(str(empty_path))
+        
+        #TODO: revisar el save
+        new_tmx_root: etree._Element = PythonTmx.to_element(clean_tmx, True)
+        etree.ElementTree(new_tmx_root).write(clean_path, encoding="utf-8", xml_declaration=True)
+
+
+        new_tmx_root2: etree._Element = PythonTmx.to_element(empty_tmx, True)
+        etree.ElementTree(new_tmx_root2).write(empty_path, encoding="utf-8", xml_declaration=True)
+
         
         logger.info(f"Processed {clean_count + empty_count} TUs: {clean_count} kept, {empty_count} removed")
         return str(clean_path), str(empty_path)

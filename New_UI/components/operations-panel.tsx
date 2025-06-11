@@ -1,82 +1,156 @@
 "use client"
 
-import { useState } from "react"
-import type { WorkspaceFile, OPERATIONS } from "./tmx-workspace"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { WorkspaceFile, Operation } from "./tmx-workspace"
 import { Button } from "@/components/ui/button"
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
+import { Input } from "@/components/ui/input"
+import { useState } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Loader2 } from "lucide-react"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Loader2, GripVertical, Trash2, ArrowUp, ArrowDown } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
 
-interface OperationsPanelProps {
-  file: WorkspaceFile
-  operations: typeof OPERATIONS
-  onProcess: (operationId: string) => void
+export interface OperationsPanelProps {
+  files: WorkspaceFile[]
+  operations: Operation[]
+  onProcess: (operationId: string, size?: number) => Promise<void>
+  allFiles: WorkspaceFile[]
+  onFileUpdate: (fileId: string, updates: Partial<WorkspaceFile>) => void
+  queuedOperations: string[]
+  onQueueUpdate: (operations: string[]) => void
 }
 
-export function OperationsPanel({ file, operations, onProcess }: OperationsPanelProps) {
+export function OperationsPanel({
+  files,
+  operations,
+  onProcess,
+  allFiles,
+  onFileUpdate,
+  queuedOperations,
+  onQueueUpdate,
+}: OperationsPanelProps) {
   const [activeTab, setActiveTab] = useState("all")
-  const isProcessing = file.status === "processing"
+  const [splitSize, setSplitSize] = useState<number>(1000)
+  const [selectedOperations, setSelectedOperations] = useState<string[]>([])
+  const isProcessing = files.length > 0 && files[0].status === "processing"
 
   // Group operations by category
   const conversionOps = operations.filter((op) => op.id.startsWith("convert_") || op.id.includes("merge"))
-
-  const cleaningOps = operations.filter(
-    (op) => op.id.includes("clean") || op.id.includes("empty") || op.id.includes("duplicates"),
-  )
-
+  const cleaningOps = operations.filter((op) => op.id.includes("clean") || op.id.includes("empty") || op.id.includes("duplicates"))
   const splitOps = operations.filter((op) => op.id.includes("split"))
-
   const batchOps = operations.filter((op) => op.id.includes("batch"))
 
+  const handleOperationSelect = (operationId: string) => {
+    setSelectedOperations(prev => {
+      if (prev.includes(operationId)) {
+        return prev.filter(id => id !== operationId)
+      }
+      return [...prev, operationId]
+    })
+  }
+
+  const handleAddToQueue = (operationId: string) => {
+    onQueueUpdate([...queuedOperations, operationId])
+  }
+
+  const handleMoveOperation = (index: number, direction: 'up' | 'down') => {
+    const newIndex = direction === 'up' ? index - 1 : index + 1
+    if (newIndex < 0 || newIndex >= queuedOperations.length) return
+
+    const newQueue = [...queuedOperations]
+    const [movedItem] = newQueue.splice(index, 1)
+    newQueue.splice(newIndex, 0, movedItem)
+    onQueueUpdate(newQueue)
+  }
+
+  const handleRemoveFromQueue = (index: number) => {
+    const newQueue = [...queuedOperations]
+    newQueue.splice(index, 1)
+    onQueueUpdate(newQueue)
+  }
+
+  const handleProcessQueue = async () => {
+    for (const operationId of queuedOperations) {
+      await onProcess(operationId, operationId === "split_size" ? splitSize : undefined)
+    }
+  }
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>TMX Operations</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid grid-cols-5 mb-4">
-            <TabsTrigger value="all" disabled={isProcessing}>
-              All
-            </TabsTrigger>
-            <TabsTrigger value="conversion" disabled={isProcessing}>
-              Conversion
-            </TabsTrigger>
-            <TabsTrigger value="cleaning" disabled={isProcessing}>
-              Cleaning
-            </TabsTrigger>
-            <TabsTrigger value="splitting" disabled={isProcessing}>
-              Splitting
-            </TabsTrigger>
-            <TabsTrigger value="batch" disabled={isProcessing}>
-              Batch
-            </TabsTrigger>
-          </TabsList>
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>TMX Operations</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="grid grid-cols-6 mb-4">
+              <TabsTrigger value="all" disabled={isProcessing}>
+                All
+              </TabsTrigger>
+              <TabsTrigger value="conversion" disabled={isProcessing}>
+                Conversion
+              </TabsTrigger>
+              <TabsTrigger value="cleaning" disabled={isProcessing}>
+                Cleaning
+              </TabsTrigger>
+              <TabsTrigger value="splitting" disabled={isProcessing}>
+                Splitting
+              </TabsTrigger>
+              <TabsTrigger value="batch" disabled={isProcessing}>
+                Batch
+              </TabsTrigger>
+              <TabsTrigger value="custom" disabled={isProcessing}>
+                Custom
+              </TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="all" className="space-y-4">
-            <OperationsList operations={operations} onProcess={onProcess} isProcessing={isProcessing} file={file} />
-          </TabsContent>
+            <TabsContent value="all" className="space-y-4">
+              <OperationsList operations={operations} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} />
+            </TabsContent>
 
-          <TabsContent value="conversion" className="space-y-4">
-            <OperationsList operations={conversionOps} onProcess={onProcess} isProcessing={isProcessing} file={file} />
-          </TabsContent>
+            <TabsContent value="conversion" className="space-y-4">
+              <OperationsList operations={conversionOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} />
+            </TabsContent>
 
-          <TabsContent value="cleaning" className="space-y-4">
-            <OperationsList operations={cleaningOps} onProcess={onProcess} isProcessing={isProcessing} file={file} />
-          </TabsContent>
+            <TabsContent value="cleaning" className="space-y-4">
+              <OperationsList operations={cleaningOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} />
+            </TabsContent>
 
-          <TabsContent value="splitting" className="space-y-4">
-            <OperationsList operations={splitOps} onProcess={onProcess} isProcessing={isProcessing} file={file} />
-          </TabsContent>
+            <TabsContent value="splitting" className="space-y-4">
+              <OperationsList operations={splitOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} />
+            </TabsContent>
 
-          <TabsContent value="batch" className="space-y-4">
-            <OperationsList operations={batchOps} onProcess={onProcess} isProcessing={isProcessing} file={file} />
-          </TabsContent>
-        </Tabs>
-      </CardContent>
-    </Card>
+            <TabsContent value="batch" className="space-y-4">
+              <OperationsList operations={batchOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} />
+            </TabsContent>
+
+            <TabsContent value="custom" className="space-y-4">
+              <div className="space-y-4">
+                {operations.map((operation) => (
+                  <div
+                    key={operation.id}
+                    className="flex items-center justify-between p-4 border rounded-lg"
+                  >
+                    <div className="space-y-1">
+                      <h3 className="font-medium">{operation.name}</h3>
+                      <p className="text-sm text-muted-foreground">
+                        {operation.description}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleAddToQueue(operation.id)}
+                    >
+                      Add to Queue
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
+    </div>
   )
 }
 
@@ -84,76 +158,53 @@ function OperationsList({
   operations,
   onProcess,
   isProcessing,
-  file,
+  files,
+  splitSize,
+  setSplitSize,
 }: {
-  operations: typeof OPERATIONS
-  onProcess: (operationId: string) => void
+  operations: Operation[]
+  onProcess: (operationId: string, size?: number) => Promise<void>
   isProcessing: boolean
-  file: WorkspaceFile
+  files: WorkspaceFile[]
+  splitSize: number
+  setSplitSize: (size: number) => void
 }) {
-  // Check if operation has already been applied to this file
-  const isOperationApplied = (opId: string) => {
-    return file.operations.some((op) => op.name === operations.find((o) => o.id === opId)?.name)
-  }
-
-  const needsTMXFile = (opId: string) => opId === "xliff_tmx_leverage"
-
   return (
-    <Accordion type="single" collapsible className="w-full">
-      {operations.map((op) => (
-        <AccordionItem key={op.id} value={op.id}>
-          <AccordionTrigger className="hover:bg-muted/50 px-4 rounded-md">
-            <div className="flex items-center justify-between w-full pr-4">
-              <span>{op.name}</span>
-              {isOperationApplied(op.id) && (
-                <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">Applied</span>
-              )}
+    <div className="space-y-4">
+      {operations.map((operation) => (
+        <div key={operation.id} className="flex items-center gap-4">
+          <div className="flex-1">
+            <h3 className="font-medium">{operation.name}</h3>
+            <p className="text-sm text-muted-foreground">{operation.description}</p>
+          </div>
+          {operation.id === "split_size" && (
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                value={splitSize}
+                onChange={(e) => setSplitSize(Number(e.target.value))}
+                className="w-24"
+                min={1}
+              />
+              <span className="text-sm text-muted-foreground">segments</span>
             </div>
-          </AccordionTrigger>
-          <AccordionContent className="px-4 pt-2">
-            <p className="text-sm text-muted-foreground mb-4">{getOperationDescription(op.id)}</p>
-            {needsTMXFile(op.id) && (
-              <div className="mb-4">
-                <Select
-                  onValueChange={(tmxId) => {
-                    setFiles((prev) =>
-                      prev.map((f) =>
-                        f.id === file.id
-                          ? { ...f, relatedFiles: { ...f.relatedFiles, tmxFile: tmxId } }
-                          : f
-                      )
-                    )
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select TMX file" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {files
-                      .filter((f) => f.name.toLowerCase().endsWith('.tmx'))
-                      .map((f) => (
-                        <SelectItem key={f.id} value={f.id}>
-                          {f.name}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
+          )}
+          <Button
+            onClick={() => onProcess(operation.id, operation.id === "split_size" ? splitSize : undefined)}
+            disabled={files.length === 0 || isProcessing}
+          >
+            {isProcessing ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Processing...
+              </>
+            ) : (
+              "Process"
             )}
-            <Button onClick={() => onProcess(op.id)} disabled={isProcessing} className="w-full">
-              {isProcessing ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                <>Apply {op.name}</>
-              )}
-            </Button>
-          </AccordionContent>
-        </AccordionItem>
+          </Button>
+        </div>
       ))}
-    </Accordion>
+    </div>
   )
 }
 
@@ -192,23 +243,7 @@ function getOperationDescription(opId: string): string {
   }
 }
 
-export const OPERATIONS = [
-  // ... existing operations ...
-  {
-    id: "xliff_tmx_leverage",
-    name: "Leverage TMX into XLIFF",
-    description: "Apply translations from a TMX file to an XLIFF file",
-    requiresFiles: ["xliff", "tmx"],
-  },
-  {
-    id: "xliff_check",
-    name: "Check XLIFF Status",
-    description: "Check the translation status of an XLIFF file",
-    requiresFiles: ["xliff"],
-  },
-] as const
-
-const isValidFileType = (file: File, operation: typeof OPERATIONS[number]) => {
+const isValidFileType = (file: File, operation: Operation) => {
   const extension = file.name.split('.').pop()?.toLowerCase()
   
   if (operation.requiresFiles?.includes("xliff")) {

@@ -6,17 +6,17 @@ import { Button } from "@/components/ui/button"
 import { Download, Trash2, CheckCircle, Clock, AlertCircle, FileIcon } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 
-interface WorkspaceFilesProps {
+export interface WorkspaceFilesProps {
   files: WorkspaceFile[]
-  selectedFileId: string | null
-  onSelectFile: (id: string) => void
+  selectedFileIds: string[]
+  onSelectFile: (fileId: string, multiSelect?: boolean) => void
   onRemoveFile: (id: string) => void
-  onDownloadFile: (id: string) => void
+  onDownloadFile: (fileId: string) => Promise<void>
 }
 
 export function WorkspaceFiles({
   files,
-  selectedFileId,
+  selectedFileIds,
   onSelectFile,
   onRemoveFile,
   onDownloadFile,
@@ -47,36 +47,25 @@ export function WorkspaceFiles({
             {files.map((file) => (
               <div
                 key={file.id}
-                className={`flex items-center justify-between p-3 rounded-md cursor-pointer transition-colors ${
-                  selectedFileId === file.id ? "bg-primary/10 border border-primary/20" : "hover:bg-muted"
+                className={`p-4 rounded-lg border cursor-pointer transition-colors ${
+                  selectedFileIds.includes(file.id)
+                    ? "bg-primary/10 border-primary"
+                    : "hover:bg-muted/50"
                 }`}
-                onClick={() => onSelectFile(file.id)}
+                onClick={(e) => {
+                  // Use Ctrl/Cmd + Click for multi-select
+                  const multiSelect = e.ctrlKey || e.metaKey
+                  onSelectFile(file.id, multiSelect)
+                }}
               >
-                <div className="flex items-center space-x-3">
-                  <FileIcon className="h-5 w-5 text-muted-foreground" />
+                <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-medium truncate max-w-[200px] md:max-w-[300px]">{file.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {(file.size / 1024).toFixed(2)} KB • {file.operations.length} operations
+                    <h3 className="font-medium">{file.name}</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {(file.size / 1024).toFixed(2)} KB • {getFileTypeLabel(file.name)}
                     </p>
                   </div>
-                </div>
-                <div className="flex items-center space-x-1">
-                  <StatusIcon status={file.status} />
-                  <div className="flex space-x-1">
-                    {file.operations.length > 0 && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onDownloadFile(file.id)
-                        }}
-                      >
-                        <Download className="h-4 w-4" />
-                        <span className="sr-only">Download</span>
-                      </Button>
-                    )}
+                  <div className="flex items-center gap-2">
                     <Button
                       variant="ghost"
                       size="icon"
@@ -86,10 +75,17 @@ export function WorkspaceFiles({
                       }}
                     >
                       <Trash2 className="h-4 w-4" />
-                      <span className="sr-only">Remove</span>
                     </Button>
                   </div>
                 </div>
+                {file.status === "processing" && (
+                  <div className="mt-2 text-sm text-muted-foreground">Processing...</div>
+                )}
+                {file.status === "error" && (
+                  <div className="mt-2 text-sm text-destructive">
+                    {file.operations[file.operations.length - 1]?.errorMessage || "An error occurred"}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -97,6 +93,24 @@ export function WorkspaceFiles({
       </CardContent>
     </Card>
   )
+}
+
+function getFileTypeLabel(filename: string): string {
+  const extension = filename.split(".").pop()?.toLowerCase()
+  switch (extension) {
+    case "tmx":
+      return "TMX File"
+    case "xlsx":
+    case "xls":
+      return "Excel File"
+    case "xliff":
+    case "xlf":
+      return "XLIFF File"
+    case "csv":
+      return "CSV File"
+    default:
+      return extension ? `${extension.toUpperCase()} File` : "Unknown File"
+  }
 }
 
 function StatusIcon({ status }: { status: WorkspaceFile["status"] }) {

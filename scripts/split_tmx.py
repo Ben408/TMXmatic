@@ -1,5 +1,6 @@
 import sys
 import os
+import lxml.etree as etree
 
 # Add the parent directory of PythonTmx to the path
 tmx_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'tmx', 'Lib', 'site-packages')
@@ -29,7 +30,9 @@ def split_by_language(file_path: str) -> List[str]:
     
     try:
         input_path = Path(file_path)
-        tmx = PythonTmx.Tmx(str(input_path))
+        tm : etree._ElementTree = etree.parse(input_path, etree.XMLParser(encoding="utf-8"))
+        tmx_root: etree._Element = tm.getroot()
+        tmx: PythonTmx.TmxElement = PythonTmx.from_element(tmx_root)
         source_lang = tmx.header.srclang
         
         # Track languages and their TUs
@@ -48,13 +51,9 @@ def split_by_language(file_path: str) -> List[str]:
             # Create TMX for each target language
             for lang in target_langs:
                 if lang not in language_tus:
-                    new_tmx = PythonTmx.Tmx()
-                    new_tmx.header.srclang = source_lang
-                    new_tmx.header.segtype = tmx.header.segtype
-                    new_tmx.header.adminlang = tmx.header.adminlang
+                    new_tmx = PythonTmx.Tmx(header=tmx.header)
                     new_tmx.header.creationtool = "TMX Splitter"
                     new_tmx.header.creationtoolversion = "1.0"
-                    new_tmx.header.creationdate = datetime.now().strftime("%Y%m%dT%H%M%SZ")
                     language_tus[lang] = new_tmx
                 
                 language_tus[lang].tus.append(tu)
@@ -62,11 +61,12 @@ def split_by_language(file_path: str) -> List[str]:
         # Save language-specific TMX files
         for lang, lang_tmx in language_tus.items():
             output_path = input_path.parent / f"{input_path.stem}_{lang}.tmx"
-            lang_tmx.save(str(output_path))
+            new_tmx_root: etree._Element = PythonTmx.to_element(lang_tmx, True)
+            etree.ElementTree(new_tmx_root).write(output_path, encoding="utf-8", xml_declaration=True)
             created_files.append(str(output_path))
             logger.info(f"Created {lang} TMX with {len(lang_tmx.tus)} TUs")
         
-        return created_files
+        return tuple(created_files)
 
     except Exception as e:
         logger.error(f"Error splitting TMX by language: {e}")
@@ -87,31 +87,35 @@ def split_by_size(file_path: str, max_tus: int = 50000) -> List[str]:
     
     try:
         input_path = Path(file_path)
-        tmx = PythonTmx.Tmx(str(input_path))
+
+        tm : etree._ElementTree = etree.parse(input_path, etree.XMLParser(encoding="utf-8"))
+        tmx_root: etree._Element = tm.getroot()
+        tmx: PythonTmx.TmxElement = PythonTmx.from_element(tmx_root)
+        
         created_files: List[str] = []
         
         # Calculate number of parts needed
         total_tus = len(tmx.tus)
-        num_parts = math.ceil(total_tus / max_tus)
+        num_parts = math.ceil(total_tus / int(max_tus))
         
         for part in range(num_parts):
             # Create new TMX for this part
-            part_tmx = PythonTmx.Tmx()
-            part_tmx.header.srclang = tmx.header.srclang
-            part_tmx.header.segtype = tmx.header.segtype
-            part_tmx.header.adminlang = tmx.header.adminlang
+            part_tmx = PythonTmx.Tmx(header=tmx.header)
             part_tmx.header.creationtool = "TMX Splitter"
             part_tmx.header.creationtoolversion = "1.0"
-            part_tmx.header.creationdate = datetime.now().strftime("%Y%m%dT%H%M%SZ")
             
+
             # Add TUs for this part
-            start_idx = part * max_tus
-            end_idx = min((part + 1) * max_tus, total_tus)
+            start_idx = part * int(max_tus)
+            end_idx = min((part + 1) * int(max_tus), total_tus)
             part_tmx.tus.extend(tmx.tus[start_idx:end_idx])
             
+            
+
             # Save part file
             output_path = input_path.parent / f"{input_path.stem}_part{part + 1}.tmx"
-            part_tmx.save(str(output_path))
+            new_tmx_root: etree._Element = PythonTmx.to_element(part_tmx, True)
+            etree.ElementTree(new_tmx_root).write(output_path, encoding="utf-8", xml_declaration=True)
             created_files.append(str(output_path))
             logger.info(f"Created part {part + 1} with {len(part_tmx.tus)} TUs")
         
