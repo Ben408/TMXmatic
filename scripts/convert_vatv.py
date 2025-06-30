@@ -4,6 +4,7 @@ import csv
 from pathlib import Path
 import logging
 from typing import Optional, TextIO
+import lxml.etree as etree
 
 logger = logging.getLogger(__name__)
 
@@ -131,13 +132,13 @@ def process_csv_file(file_path: str) -> tuple[str, list[tuple[str, str]]]:
                 raise ValueError("CSV is missing required columns: 'Base Value' and/or 'Translated Value'")
             
             # Create TMX
-            tmx = PythonTmx.Tmx()
-            tmx.header.srclang = "en-us"
-            tmx.header.segtype = "phrase"
-            tmx.header.adminlang = "en-us"
-            tmx.header.creationtool = "VATV Converter"
-            tmx.header.creationtoolversion = "1.0"
-            tmx.header.creationdate = datetime.now().strftime("%Y%m%dT%H%M%SZ")
+
+            segtype: PythonTmx.SEGTYPE = PythonTmx.SEGTYPE
+            segtype.name = 'PHRASE'
+            segtype.value = 'phrase'
+            header = PythonTmx.Header(srclang="en-us",segtype=segtype,adminlang="en-us", creationtool="VATV Converter", creationtoolversion="1.0", tmf="tmx", datatype="unknown", encoding="utf8")
+            tmx = PythonTmx.Tmx(header=header)
+            
             
             # Process rows
             row_count = skipped_count = empty_source = empty_target = 0
@@ -161,23 +162,24 @@ def process_csv_file(file_path: str) -> tuple[str, list[tuple[str, str]]]:
                     skipped_count += 1
                     continue
                 
-                # Create TU
-                tu = PythonTmx.Tu()
-                
                 # Add source TUV
                 source_tuv = PythonTmx.Tuv(lang="en-us")
-                source_tuv.seg = source_text
-                tu.tuvs.append(source_tuv)
+                source_tuv.content = source_text
                 
                 # Add target TUV
                 target_tuv = PythonTmx.Tuv(lang=LANGUAGE_CODES[target_lang])
-                target_tuv.seg = target_text
-                tu.tuvs.append(target_tuv)
-                
-                tmx.tus.append(tu)
+                target_tuv.content = target_text
+
+                tmx.tus.append(PythonTmx.Tu(srclang="en-us", tuvs=[source_tuv,target_tuv]))
             
             # Save TMX file
-            tmx.save(str(output_path))
+            
+            new_tmx_root: etree._Element = PythonTmx.to_element(tmx, True)
+            etree.ElementTree(new_tmx_root).write(output_path, encoding="utf-8", xml_declaration=True)
+
+
+            
+            #tmx.save(str(output_path))
             
             # Log results
             logs.append(("info", f"Created TMX with {len(tmx.tus)} TUs"))

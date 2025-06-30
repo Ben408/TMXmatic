@@ -1,2 +1,0 @@
-tmx
-tmx\scripts\activate

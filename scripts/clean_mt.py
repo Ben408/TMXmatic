@@ -1,5 +1,4 @@
 import PythonTmx
-from PythonTmx import from_tmx
 import os
 import re
 from datetime import datetime
