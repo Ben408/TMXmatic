@@ -19,6 +19,7 @@ def empty_targets(file_path: str) -> tuple[str, str]:
     logger.info(f"Processing file: {file_path}")
     
     try:
+        print("dem")
         # Create output paths
         input_path = Path(file_path)
         output_dir = input_path.parent
@@ -41,7 +42,6 @@ def empty_targets(file_path: str) -> tuple[str, str]:
             tmx_file.header.creationtoolversion = "1.0"
 
         clean_count = empty_count = 0
-
         # Process TUs
         for tu in tmx.tus:
             has_empty_target = False
@@ -57,6 +57,9 @@ def empty_targets(file_path: str) -> tuple[str, str]:
             if source_text:
                 # Check target segments
                 for tuv in tu.tuvs:
+                    if len(tu.tuvs) == 1:
+                        has_empty_target = True
+                        break
                     if tuv.lang != source_lang:
                         # Check if target is empty or same as source
                         if not tuv.content or str(tuv.content).isspace() or tuv.content == source_text:

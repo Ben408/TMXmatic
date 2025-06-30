@@ -82,7 +82,7 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 # Application Configuration
 app.config.update(
     UPLOAD_FOLDER=os.path.join(application_path, 'uploads'),
-    MAX_CONTENT_LENGTH=512 * 1024 * 1024,  # 512MB max file size
+    MAX_CONTENT_LENGTH=4 * 1024 * 1024,  # 1024MB max file size
     SECRET_KEY=secrets.token_hex(32),
     SESSION_COOKIE_SECURE=False,  # Allow HTTP in development
     SESSION_COOKIE_HTTPONLY=True,
@@ -252,27 +252,39 @@ def index():
         try:
             # Validate file
             if 'file' not in request.files:
-                flash('No file uploaded', 'error')
-                return redirect(url_for('index'))
+                if is_api_request():
+                    return jsonify({'error': 'No file uploaded'}), 400
+                else:
+                    flash('No file uploaded', 'error')
+                    return redirect(url_for('index'))
             
             
             
             files = request.files.getlist('file')
             for file in files:
                 if not files or not file.filename:
-                    flash('No file selected', 'error')
-                    return redirect(url_for('index'))
+                    if is_api_request():
+                        return jsonify({'error': 'No file selected'}), 400
+                    else:
+                        flash('No file selected', 'error')
+                        return redirect(url_for('index'))
 
             for file in files:    
                 if not allowed_file(file.filename):
-                    flash('Invalid file type', 'error')
-                    return redirect(url_for('index'))
+                    if is_api_request():
+                        return jsonify({'error': 'Invalid file type'}), 400
+                    else:
+                        flash('Invalid file type', 'error')
+                        return redirect(url_for('index'))
 
             # Get operation
             operation = request.form.get('operation')
             if not operation:
-                flash('No operation selected', 'error')
-                return redirect(url_for('index'))
+                if is_api_request():
+                    return jsonify({'error': 'No operation selected'}), 400
+                else:
+                    flash('No operation selected', 'error')
+                    return redirect(url_for('index'))
 
             # Save and process file
             file_list = []
@@ -344,8 +356,11 @@ def index():
                     
         except Exception as e:
             logger.error(f"Error processing request: {e}")
-            flash(f"Error processing file: {str(e)}", 'error')
-            return redirect(url_for('index'))
+            if is_api_request():
+                return jsonify({'error': f"Error processing file: {str(e)}"}), 500
+            else:
+                flash(f"Error processing file: {str(e)}", 'error')
+                return redirect(url_for('index'))
 
     # GET request - render template
     return render_template('index.html', operations=OPERATIONS)
@@ -354,8 +369,11 @@ def index():
 def too_large(e):
     """Handle file too large error"""
     logger.warning("File too large error")
-    flash('File is too large. Maximum size is 512MB.', 'error')
-    return redirect(url_for('index'))
+    if is_api_request():
+        return jsonify({'error': 'File is too large. Maximum size is 1024MB.'}), 413
+    else:
+        flash('File is too large. Maximum size is 1024MB.', 'error')
+        return redirect(url_for('index'))
 
 @app.errorhandler(500)
 def internal_error(e):
@@ -483,6 +501,10 @@ def xliff_check():
     except Exception as e:
         logger.error(f"Error in xliff_check: {e}")
         return jsonify({'error': str(e)}), 400
+
+def is_api_request():
+    # Checks if the request expects JSON (AJAX/fetch) or is a form POST from the browser
+    return request.accept_mimetypes['application/json'] >= request.accept_mimetypes['text/html']
 
 if __name__ == '__main__':
     try:

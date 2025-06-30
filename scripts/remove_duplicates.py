@@ -3,7 +3,6 @@ import os
 from datetime import datetime
 from pathlib import Path
 import logging
-from collections import defaultdict
 import lxml.etree as etree
 
 logger = logging.getLogger(__name__)
