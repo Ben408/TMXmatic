@@ -82,7 +82,7 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 # Application Configuration
 app.config.update(
     UPLOAD_FOLDER=os.path.join(application_path, 'uploads'),
-    MAX_CONTENT_LENGTH=4 * 1024 * 1024,  # 1024MB max file size
+    MAX_CONTENT_LENGTH=1024 * 1024 * 1024,  # 1024MB max file size
     SECRET_KEY=secrets.token_hex(32),
     SESSION_COOKIE_SECURE=False,  # Allow HTTP in development
     SESSION_COOKIE_HTTPONLY=True,

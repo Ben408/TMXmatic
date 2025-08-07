@@ -41,12 +41,26 @@ def split_by_language(file_path: str) -> List[str]:
         
         # Process TUs
         for tu in tmx.tus:
+            # Validate TU structure
+            if not tu.tuvs or len(tu.tuvs) < 2:
+                logger.warning(f"Skipping TU with insufficient TUVs: {len(tu.tuvs) if tu.tuvs else 0} TUVs")
+                continue
+                
             target_langs: Set[str] = set()
-            
+            src_tuv = None
             # Find target languages in TU
             for tuv in tu.tuvs:
-                if tuv.lang != source_lang:
+                if tuv.lang == source_lang:
+                    src_tuv = tuv
+                else:
                     target_langs.add(tuv.lang)
+            
+            # Skip if no source TUV found
+            if not src_tuv:
+                logger.warning(f"Skipping TU without source language TUV for {source_lang}")
+                continue
+                    
+                
             
             # Create TMX for each target language
             for lang in target_langs:
@@ -56,16 +70,22 @@ def split_by_language(file_path: str) -> List[str]:
                     new_tmx.header.creationtoolversion = "1.0"
                     language_tus[lang] = new_tmx
                 
-                language_tus[lang].tus.append(tu)
+            for tuv in tu.tuvs:
+                if tuv.lang != source_lang:
+                    current_tu = tu
+                    current_tu.tuvs = [src_tuv,tuv]
+                    language_tus[tuv.lang].tus.append(current_tu)
         
         # Save language-specific TMX files
         for lang, lang_tmx in language_tus.items():
+            
+            logger.info(lang)
             output_path = input_path.parent / f"{input_path.stem}_{lang}.tmx"
             new_tmx_root: etree._Element = PythonTmx.to_element(lang_tmx, True)
             etree.ElementTree(new_tmx_root).write(output_path, encoding="utf-8", xml_declaration=True)
             created_files.append(str(output_path))
             logger.info(f"Created {lang} TMX with {len(lang_tmx.tus)} TUs")
-        
+        print("termino")
         return tuple(created_files)
 
     except Exception as e:
