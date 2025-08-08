@@ -62,7 +62,7 @@ def empty_targets(file_path: str) -> tuple[str, str]:
                         break
                     if tuv.lang != source_lang:
                         # Check if target is empty or same as source
-                        if not tuv.content or str(tuv.content).isspace() or tuv.content == source_text:
+                        if not tuv.content or str(tuv.content).isspace():
                             has_empty_target = True
                             break
             

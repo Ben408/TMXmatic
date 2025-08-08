@@ -72,14 +72,13 @@ def split_by_language(file_path: str) -> List[str]:
                 
             for tuv in tu.tuvs:
                 if tuv.lang != source_lang:
-                    current_tu = tu
+                    current_tu = PythonTmx.Tu()
+                    current_tu.props = tu.props
                     current_tu.tuvs = [src_tuv,tuv]
                     language_tus[tuv.lang].tus.append(current_tu)
         
         # Save language-specific TMX files
         for lang, lang_tmx in language_tus.items():
-            
-            logger.info(lang)
             output_path = input_path.parent / f"{input_path.stem}_{lang}.tmx"
             new_tmx_root: etree._Element = PythonTmx.to_element(lang_tmx, True)
             etree.ElementTree(new_tmx_root).write(output_path, encoding="utf-8", xml_declaration=True)
