@@ -19,6 +19,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import JSZip from "jszip"
 
 export type XLIFFStats = {
   totalSegments: number
@@ -357,7 +358,7 @@ export function TMXWorkspace() {
     const url = URL.createObjectURL(file.processedData)
     const a = document.createElement("a")
     a.href = url
-    a.download = `processed_files.zip`
+    a.download = file.name
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -373,14 +374,15 @@ export function TMXWorkspace() {
     const processedFiles = files.filter(file => file.processedData)
     if (processedFiles.length === 0) return
 
-    // Create a zip file using the browser's built-in capabilities
-    const zip = new Blob(
-      processedFiles.map(file => file.processedData as Blob).filter(Boolean),
-      { type: 'application/zip' }
-    )
+    const zip = new JSZip()
+    for (const file of processedFiles) {
+      if (file.processedData) {
+        zip.file(file.name, file.processedData)
+      }
+    }
 
-    // Download the zip file
-    const url = URL.createObjectURL(zip)
+    const content = await zip.generateAsync({ type: "blob" })
+    const url = URL.createObjectURL(content)
     const a = document.createElement("a")
     a.href = url
     a.download = "processed_files.zip"
@@ -396,11 +398,17 @@ export function TMXWorkspace() {
   }
 
   const handleDownloadAll = async () => {
-    const zip = new Blob(
-      files.map(file => file.processedData || file.data),
-      { type: 'application/zip' }
-    )
-    const url = URL.createObjectURL(zip)
+    const zip = new JSZip()
+    for (const file of files) {
+      if (file.processedData) {
+        zip.file(file.name, file.processedData)
+      } else if (file.data) {
+        zip.file(file.name, file.data)
+      }
+    }
+    
+    const content = await zip.generateAsync({ type: "blob" })
+    const url = URL.createObjectURL(content)
     const a = document.createElement("a")
     a.href = url
     a.download = "all_files.zip"

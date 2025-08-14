@@ -19,7 +19,6 @@ def empty_targets(file_path: str) -> tuple[str, str]:
     logger.info(f"Processing file: {file_path}")
     
     try:
-        print("dem")
         # Create output paths
         input_path = Path(file_path)
         output_dir = input_path.parent

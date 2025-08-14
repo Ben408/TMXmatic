@@ -203,8 +203,9 @@ def queue():
             result_list2 = [result]
             result_list2.extend(garbage)
 
+            print(files)
+
             result_list = tuple(result_list)
-            
             memory_file = io.BytesIO()
             with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
                 if operation in ('convert_vatv','clean_mt','merge_tmx'):
@@ -218,6 +219,8 @@ def queue():
                         if os.path.exists(result):
                             zf.write(result, os.path.basename(result))
                 
+
+
             memory_file.seek(0)
 
             # Handle different result types
@@ -288,8 +291,6 @@ def index():
 
             # Save and process file
             file_list = []
-            print("archivos: "+ str(len(files)))
-            print(files)
             for file in files:
                 filename = secure_filename(file.filename)
                 filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
@@ -326,11 +327,17 @@ def index():
                             zf.write(file_path, os.path.basename(file_path))
                     else:
                         for result in result_list:
-                            if os.path.exists(result):
-                                zf.write(result, os.path.basename(result))
-                    
-                memory_file.seek(0)
+                            if len(result) > 2:
+                                if os.path.exists(result):
+                                    zf.write(result, os.path.basename(result))
+                            else:
+                                for tm in result:
+                                    if os.path.exists(tm):
+                                        print(tm)
+                                        zf.write(tm, os.path.basename(tm))
 
+                memory_file.seek(0)
+                
                 # Handle different result types
                 if isinstance(memory_file, io.BytesIO):
                     return send_file(

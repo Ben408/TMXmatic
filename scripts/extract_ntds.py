@@ -50,6 +50,7 @@ def extract_non_true_duplicates(file_path: str) -> tuple[str, str]:
 
         duplicates = {}                                 #A dictionary of all non Non-True-Duplicates(this 
                                                         #includes non repeated segments, as well as True-Duplicates)
+
         ntds = {}                                       #A dictionary for all Non-True-Duplicates
 
         for tu in tmx:
@@ -57,7 +58,7 @@ def extract_non_true_duplicates(file_path: str) -> tuple[str, str]:
             target = ""
 
             for tuv in tu.tuvs:
-                if tuv.lang.lower() == "en-us":
+                if tuv.lang.lower() in  ("en-us", "en_us", "en") :
                     for seg in tuv.content:             #Assuming the source has tags, this part concatenates each part into a new string
                         source = source + str(seg)     
                 else:
@@ -101,7 +102,6 @@ def extract_non_true_duplicates(file_path: str) -> tuple[str, str]:
         ntds_tmx.tus = ntds_segments
         new_tmx_root2: etree._Element = PythonTmx.to_element(ntds_tmx, True)
         etree.ElementTree(new_tmx_root2).write(dups_path, encoding="utf-8", xml_declaration=True)
-        print("llego aca")
         logger.info(f"Processed {len(clean_segments)+ len(ntds_segments)} TUs: {len(clean_segments)} kept, {len(ntds_segments)} removed")
         
         
