@@ -354,11 +354,31 @@ export function TMXWorkspace() {
     const file = files.find((f) => f.id === fileId)
     if (!file || !file.processedData) return
 
+    // Check if the processed data is actually a ZIP file by examining the first few bytes
+    const arrayBuffer = await file.processedData.arrayBuffer()
+    const uint8Array = new Uint8Array(arrayBuffer)
+    
+    // ZIP files start with PK\x03\x04 (0x504B0304)
+    const isZipFile = uint8Array.length >= 4 && 
+                     uint8Array[0] === 0x50 && 
+                     uint8Array[1] === 0x4B && 
+                     uint8Array[2] === 0x03 && 
+                     uint8Array[3] === 0x04
+
     // Create download URL from the processed file data
     const url = URL.createObjectURL(file.processedData)
     const a = document.createElement("a")
     a.href = url
-    a.download = file.name
+    
+    // Set appropriate filename and extension based on content type
+    if (isZipFile) {
+      // Extract base name without extension and add .zip
+      const baseName = file.name.replace(/\.[^/.]+$/, "")
+      a.download = `${baseName}_processed.zip`
+    } else {
+      a.download = file.name
+    }
+    
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -366,7 +386,9 @@ export function TMXWorkspace() {
 
     toast({
       title: "File downloaded",
-      description: `Downloaded processed version of ${file.name}`,
+      description: isZipFile 
+        ? `Downloaded ZIP archive containing processed files from ${file.name}`
+        : `Downloaded processed version of ${file.name}`,
     })
   }
 
@@ -377,10 +399,9 @@ export function TMXWorkspace() {
     const zip = new JSZip()
     for (const file of processedFiles) {
       if (file.processedData) {
-        zip.file(file.name, file.processedData)
+        zip.file(file.name.replace(".tmx",".zip"), file.processedData)
       }
     }
-
     const content = await zip.generateAsync({ type: "blob" })
     const url = URL.createObjectURL(content)
     const a = document.createElement("a")
