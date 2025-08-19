@@ -2,6 +2,19 @@
 
 A web-based tool for processing TMX (Translation Memory eXchange) and XLIFF files, with a focus on cleaning and managing translation memory data.
 
+## Quick Start (Windows)
+
+- Double-click `start_tmxmatic.bat` in the project root.
+- This script will:
+  - Check for Python 3; if missing, attempt to install it silently via `winget`.
+  - Create and activate a virtual environment at `.venv`.
+  - Upgrade `pip` and install dependencies from `other/requirements.txt`; ensure `Flask-CORS` is installed.
+  - Launch the app via `launcher.py`, which will:
+    - Start the Flask backend at `http://localhost:5000`.
+    - Check for Node.js/npm; if missing, download and install Node.js.
+    - If the frontend is present at `dist/New_UI`, install Node dependencies, build the UI, and start the dev server (typically on `http://localhost:3000`). Your default browser will open to the running UI.
+- Logs are written to a file named like `tmxmatic_YYYYMMDD_HHMMSS.log` in the application directory.
+
 ## Getting Started
 
 ### Prerequisites
