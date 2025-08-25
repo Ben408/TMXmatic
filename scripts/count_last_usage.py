@@ -4,6 +4,8 @@ from pathlib import Path
 import csv
 import logging
 from collections import Counter
+import lxml.etree as etree
+from .tmx_utils import create_compatible_header
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +26,104 @@ def count_last_usage_dates(file_path: str) -> tuple[str, int]:
         input_path = Path(file_path)
         output_path = input_path.parent / f"last_usage_{input_path.stem}.csv"
 
-        # Load TMX file
-        tmx = PythonTmx.Tmx(str(input_path))
+        # Load TMX file using lxml XML parsing (more reliable)
+        # Try multiple parsing approaches
+        tm = None
+        
+        # First try: let lxml auto-detect encoding (works best with BOM files)
+        try:
+            tm = etree.parse(str(input_path))
+            if tm is not None and tm.getroot() is not None:
+                logger.info("Successfully parsed with auto-detected encoding")
+        except Exception as parse_error:
+            logger.debug(f"Failed with auto-detection: {parse_error}")
+        
+        # Second try: use recover mode if auto-detection failed
+        if tm is None:
+            try:
+                parser = etree.XMLParser(recover=True)
+                tm = etree.parse(str(input_path), parser)
+                if tm is not None and tm.getroot() is not None:
+                    logger.info("Successfully parsed with recovery mode")
+            except Exception as parse_error:
+                logger.debug(f"Failed with recovery mode: {parse_error}")
+        
+        # Third try: explicit encodings as last resort
+        if tm is None:
+            for encoding in ['utf-8', 'cp1252', 'latin-1']:
+                try:
+                    parser = etree.XMLParser(encoding=encoding, recover=True)
+                    tm = etree.parse(str(input_path), parser)
+                    if tm is not None and tm.getroot() is not None:
+                        logger.info(f"Successfully parsed with encoding: {encoding}")
+                        break
+                except Exception as parse_error:
+                    logger.debug(f"Failed to parse with {encoding}: {parse_error}")
+                    continue
+        
+        if tm is None or tm.getroot() is None:
+            raise ValueError("Could not parse TMX file with any supported encoding")
+        
+        tmx_root = tm.getroot()
+        
+        # Extract header attributes from XML
+        header_elem = tmx_root.find('header')
+        if header_elem is None:
+            raise ValueError("No header element found in TMX file")
+        
+        # Create a minimal header object for compatibility with required parameters
+        header_attrs = {}
+        for attr_name in ['creationtool', 'creationtoolversion', 'adminlang', 'srclang', 'segtype', 'datatype']:
+            if attr_name in header_elem.attrib:
+                header_attrs[attr_name] = header_elem.attrib[attr_name]
+        
+        # Convert string segtype to enum if needed
+        segtype_str = header_attrs.get('segtype', 'sentence')
+        if segtype_str == 'sentence':
+            segtype_enum = PythonTmx.SEGTYPE.SENTENCE
+        elif segtype_str == 'paragraph':
+            segtype_enum = PythonTmx.SEGTYPE.PARAGRAPH
+        elif segtype_str == 'phrase':
+            segtype_enum = PythonTmx.SEGTYPE.PHRASE
+        elif segtype_str == 'block':
+            segtype_enum = PythonTmx.SEGTYPE.BLOCK
+        else:
+            segtype_enum = PythonTmx.SEGTYPE.SENTENCE  # Default fallback
+        
+        minimal_header = PythonTmx.Header(
+            creationtool=header_attrs.get('creationtool', 'Unknown Tool'),
+            creationtoolversion=header_attrs.get('creationtoolversion', '1.0'),
+            adminlang=header_attrs.get('adminlang', 'en'),
+            srclang=header_attrs.get('srclang', 'en'),
+            segtype=segtype_enum,
+            datatype=header_attrs.get('datatype', 'xml'),
+            tmf="tmx",  # Required parameter
+            encoding="utf8"  # Required parameter
+        )
+        
+        # Parse TUs manually from XML
+        tus = []
+        body_elem = tmx_root.find('body')
+        if body_elem is not None:
+            for tu_elem in body_elem.findall('tu'):
+                tu = PythonTmx.Tu()
+                for tuv_elem in tu_elem.findall('tuv'):
+                    lang = tuv_elem.get('{http://www.w3.org/XML/1998/namespace}lang', 'en')
+                    seg_elem = tuv_elem.find('seg')
+                    if seg_elem is not None and seg_elem.text:
+                        tuv = PythonTmx.Tuv(lang=lang)
+                        tuv.content = seg_elem.text
+                        # Handle creationdate and changedate attributes
+                        if 'creationdate' in tuv_elem.attrib:
+                            tuv.creationdate = tuv_elem.attrib['creationdate']
+                        if 'changedate' in tuv_elem.attrib:
+                            tuv.changedate = tuv_elem.attrib['changedate']
+                        tu.tuvs.append(tuv)
+                if len(tu.tuvs) >= 2:  # Only add TUs with both source and target
+                    tus.append(tu)
+        
+        # Create TMX object with correct constructor
+        tmx = PythonTmx.Tmx(header=minimal_header, tus=tus)
         
         # Count last usage dates
         date_counter = Counter()

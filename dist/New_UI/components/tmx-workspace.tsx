@@ -203,7 +203,90 @@ export function TMXWorkspace() {
     )
 
     try {
-      // Process each file
+      if (operationId === "merge_tmx") {
+        // Send all selected files in one request
+        const formData = new FormData()
+        for (const fileId of selectedFileIds) {
+          const file = files.find(f => f.id === fileId)
+          if (!file) continue
+          formData.append('file', file.originalData, file.name)
+        }
+        console.log("formData files:", formData.getAll('files'))
+        if (queuedOperations.length > 0) {
+          formData.append('operations', JSON.stringify(queuedOperations))
+        } else {
+          formData.append('operation', operationId)
+        }
+        console.log(`Sending merge_tmx request to /api/${operationId}`, {
+          operations: queuedOperations.length > 0 ? queuedOperations : [operationId],
+          files: selectedFileIds.map(id => files.find(f => f.id === id)?.name)
+        })
+        const response = await fetch(
+          queuedOperations.length > 0 
+            ? `http://127.0.0.1:5000/queue/`
+            : `http://127.0.0.1:5000/`,
+          {
+            method: 'POST',
+            body: formData,
+          }
+        )
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.error(`API Error: ${response.status} ${response.statusText}`, errorText)
+          throw new Error(`Operation failed: ${response.statusText} - ${errorText}`)
+        }
+        const result = await response.blob()
+        // Assign the merged file to the first selected file
+        setFiles((prev) =>
+          prev.map((f, idx) => {
+            if (f.id === selectedFileIds[0]) {
+              const processedFile = new File([result], f.name.replace(/\.[^/.]+$/, "_merged.tmx"), { type: f.type })
+              return {
+                ...f,
+                status: "processed",
+                processedData: processedFile,
+                operations: [
+                  ...f.operations,
+                  {
+                    id: crypto.randomUUID(),
+                    name: queuedOperations.length > 0 
+                      ? `Queue: ${queuedOperations.map(op => OPERATIONS.find(o => o.id === op)?.name).join(' → ')}`
+                      : OPERATIONS.find((op) => op.id === operationId)?.name || operationId,
+                    timestamp: new Date(),
+                    status: "completed",
+                  },
+                ],
+              }
+            }
+            // Mark other selected files as processed (but no processedData)
+            if (selectedFileIds.includes(f.id) && f.id !== selectedFileIds[0]) {
+              return {
+                ...f,
+                status: "processed",
+                operations: [
+                  ...f.operations,
+                  {
+                    id: crypto.randomUUID(),
+                    name: queuedOperations.length > 0 
+                      ? `Queue: ${queuedOperations.map(op => OPERATIONS.find(o => o.id === op)?.name).join(' → ')}`
+                      : OPERATIONS.find((op) => op.id === operationId)?.name || operationId,
+                    timestamp: new Date(),
+                    status: "completed",
+                  },
+                ],
+              }
+            }
+            return f
+          })
+        )
+        toast({
+          title: "Operation complete",
+          description: `Successfully merged ${selectedFileIds.length} TMX files`,
+        })
+        return
+      }
+
+      // ...existing code for other operations...
       for (const fileId of selectedFileIds) {
         const file = files.find(f => f.id === fileId)
         if (!file) continue
@@ -230,7 +313,6 @@ export function TMXWorkspace() {
         if (operationId === 'split_size' && size) {
           formData.append('size', size.toString())
         }
-
         console.log(`Sending request to /api/${operationId}`, {
           operations: queuedOperations.length > 0 ? queuedOperations : [operationId],
           file: file.name,

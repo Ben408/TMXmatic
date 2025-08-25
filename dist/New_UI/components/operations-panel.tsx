@@ -6,13 +6,18 @@ import { Input } from "@/components/ui/input"
 import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Loader2, GripVertical, Trash2, ArrowUp, ArrowDown } from "lucide-react"
+import { Loader2, GripVertical, Trash2, ArrowUp, ArrowDown, Calendar } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Calendar as CalendarIcon } from "lucide-react"
+import { format } from "date-fns"
+import { Calendar as CalendarComponent } from "@/components/ui/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { cn } from "@/lib/utils"
 
 export interface OperationsPanelProps {
   files: WorkspaceFile[]
   operations: Operation[]
-  onProcess: (operationId: string, size?: number) => Promise<void>
+  onProcess: (operationId: string, size?: number, date?: Date) => Promise<void>
   allFiles: WorkspaceFile[]
   onFileUpdate: (fileId: string, updates: Partial<WorkspaceFile>) => void
   queuedOperations: string[]
@@ -31,13 +36,15 @@ export function OperationsPanel({
   const [activeTab, setActiveTab] = useState("all")
   const [splitSize, setSplitSize] = useState<number>(1000)
   const [selectedOperations, setSelectedOperations] = useState<string[]>([])
+  const [selectedDate, setSelectedDate] = useState<Date>()
   const isProcessing = files.length > 0 && files[0].status === "processing"
 
   // Group operations by category
   const conversionOps = operations.filter((op) => op.id.startsWith("convert_") || op.id.includes("merge"))
-  const cleaningOps = operations.filter((op) => op.id.includes("clean") || op.id.includes("empty") || op.id.includes("duplicates"))
+  const cleaningOps = operations.filter((op) => op.id.includes("clean") || op.id.includes("empty") || op.id.includes("duplicates") || op.id.includes("remove") || op.id.includes("count") || op.id.includes("extract"))
   const splitOps = operations.filter((op) => op.id.includes("split"))
   const batchOps = operations.filter((op) => op.id.includes("batch"))
+  const analysisOps = operations.filter((op) => op.id.includes("count") || op.id.includes("extract") || op.id.includes("find"))
 
   const handleOperationSelect = (operationId: string) => {
     setSelectedOperations(prev => {
@@ -82,7 +89,7 @@ export function OperationsPanel({
         </CardHeader>
         <CardContent>
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid grid-cols-6 mb-4">
+            <TabsList className="grid grid-cols-7 mb-4">
               <TabsTrigger value="all" disabled={isProcessing}>
                 All
               </TabsTrigger>
@@ -92,6 +99,9 @@ export function OperationsPanel({
               <TabsTrigger value="cleaning" disabled={isProcessing}>
                 Cleaning
               </TabsTrigger>
+              <TabsTrigger value="analysis" disabled={isProcessing}>
+                Analysis
+              </TabsTrigger>
               <TabsTrigger value="splitting" disabled={isProcessing}>
                 Splitting
               </TabsTrigger>
@@ -99,28 +109,32 @@ export function OperationsPanel({
                 Batch
               </TabsTrigger>
               <TabsTrigger value="custom" disabled={isProcessing}>
-                Custom
+                Queuing
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="all" className="space-y-4">
-              <OperationsList operations={operations} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} />
+              <OperationsList operations={operations} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
             </TabsContent>
 
             <TabsContent value="conversion" className="space-y-4">
-              <OperationsList operations={conversionOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} />
+              <OperationsList operations={conversionOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
             </TabsContent>
 
             <TabsContent value="cleaning" className="space-y-4">
-              <OperationsList operations={cleaningOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} />
+              <OperationsList operations={cleaningOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
+            </TabsContent>
+
+            <TabsContent value="analysis" className="space-y-4">
+              <OperationsList operations={analysisOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
             </TabsContent>
 
             <TabsContent value="splitting" className="space-y-4">
-              <OperationsList operations={splitOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} />
+              <OperationsList operations={splitOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
             </TabsContent>
 
             <TabsContent value="batch" className="space-y-4">
-              <OperationsList operations={batchOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} />
+              <OperationsList operations={batchOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
             </TabsContent>
 
             <TabsContent value="custom" className="space-y-4">
@@ -136,6 +150,44 @@ export function OperationsPanel({
                         {operation.description}
                       </p>
                     </div>
+                    {operation.id === "split_size" && (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={splitSize}
+                          onChange={(e) => setSplitSize(Number(e.target.value))}
+                          className="w-24"
+                          min={1}
+                        />
+                        <span className="text-sm text-muted-foreground">segments</span>
+                      </div>
+                    )}
+                    {(operation.id === "remove_old" || operation.id === "find_date_duplicates") && (
+                      <div className="flex items-center gap-2">
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant={"outline"}
+                              className={cn(
+                                "w-[200px] justify-start text-left font-normal",
+                                !selectedDate && "text-muted-foreground"
+                              )}
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {selectedDate ? format(selectedDate, "PPP") : <span>Pick a date</span>}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0">
+                            <CalendarComponent
+                              mode="single"
+                              selected={selectedDate}
+                              onSelect={setSelectedDate}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
@@ -161,13 +213,17 @@ function OperationsList({
   files,
   splitSize,
   setSplitSize,
+  selectedDate,
+  setSelectedDate,
 }: {
   operations: Operation[]
-  onProcess: (operationId: string, size?: number) => Promise<void>
+  onProcess: (operationId: string, size?: number, date?: Date) => Promise<void>
   isProcessing: boolean
   files: WorkspaceFile[]
   splitSize: number
   setSplitSize: (size: number) => void
+  selectedDate?: Date
+  setSelectedDate: (date?: Date) => void
 }) {
   return (
     <div className="space-y-4">
@@ -189,9 +245,39 @@ function OperationsList({
               <span className="text-sm text-muted-foreground">segments</span>
             </div>
           )}
+          {(operation.id === "remove_old" || operation.id === "find_date_duplicates") && (
+            <div className="flex items-center gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={"outline"}
+                    className={cn(
+                      "w-[200px] justify-start text-left font-normal",
+                      !selectedDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {selectedDate ? format(selectedDate, "PPP") : <span>Pick a date</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <CalendarComponent
+                    mode="single"
+                    selected={selectedDate}
+                    onSelect={setSelectedDate}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+          )}
           <Button
-            onClick={() => onProcess(operation.id, operation.id === "split_size" ? splitSize : undefined)}
-            disabled={files.length === 0 || isProcessing}
+            onClick={() => onProcess(
+              operation.id,
+              operation.id === "split_size" ? splitSize : undefined,
+              (operation.id === "remove_old" || operation.id === "find_date_duplicates") ? selectedDate : undefined
+            )}
+            disabled={files.length === 0 || isProcessing || ((operation.id === "remove_old" || operation.id === "find_date_duplicates") && !selectedDate)}
           >
             {isProcessing ? (
               <>
@@ -211,7 +297,7 @@ function OperationsList({
 function getOperationDescription(opId: string): string {
   switch (opId) {
     case "convert_vatv":
-      return "Convert VATV CSV files to TMX format."
+      return "Convert Termweb CSV files to TMX format."
     case "convert_termweb":
       return "Convert TermWeb Excel files to TMX format."
     case "remove_empty":
@@ -220,8 +306,22 @@ function getOperationDescription(opId: string): string {
       return "Identify and extract duplicate translation units."
     case "non_true_duplicates":
       return "Find segments that are similar but not exact duplicates."
+    case "remove_sentence":
+      return "Extract sentence-level segments from TMX files."
+    case "remove_old":
+      return "Remove translation units older than a specified date."
     case "clean_mt":
       return "Clean TMX files for machine translation by removing metadata."
+    case "remove_context_props":
+      return "Remove context properties from TMX files."
+    case "count_last_usage":
+      return "Count translation units by their last usage dates."
+    case "count_creation_dates":
+      return "Count translation units by their creation dates."
+    case "extract_translations":
+      return "Extract all translations to CSV format with metadata."
+    case "find_date_duplicates":
+      return "Find duplicates based on creation and change dates."
     case "merge_tmx":
       return "Combine multiple TMX files into a single file."
     case "split_language":
@@ -245,7 +345,7 @@ function getOperationDescription(opId: string): string {
 
 const isValidFileType = (file: File, operation: Operation) => {
   const extension = file.name.split('.').pop()?.toLowerCase()
-  
+
   if (operation.requiresFiles?.includes("xliff")) {
     return extension === "xlf" || extension === "xliff"
   }

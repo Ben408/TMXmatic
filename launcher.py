@@ -233,7 +233,7 @@ def ensure_python_libraries():
     # Final verification and summary
     logging.info("=== Python Library Status Summary ===")
     for library in REQUIRED_LIBRARIES:
-        status = "✓ Installed" if is_library_installed(library) else "✗ Missing"
+        status = "[OK] Installed" if is_library_installed(library) else "[MISSING] Missing"
         logging.info(f"  {library}: {status}")
     logging.info("=====================================")
     
@@ -354,193 +354,6 @@ def provide_npm_troubleshooting_info():
     logging.info("4. Use npm install --force if other methods fail")
     logging.info("5. Consider downgrading to React 18 if needed")
     logging.info("=" * 60)
-
-def cleanup_processes():
-    """Clean up all running processes when the launcher exits"""
-    global nextjs_process, nextjs_port_global, flask_thread, nextjs_thread
-    
-    logging.info("Cleaning up processes...")
-    
-    # Clean up Next.js process
-    if 'nextjs_process' in globals() and nextjs_process:
-        try:
-            logging.info(f"Terminating Next.js process (PID: {nextjs_process.pid})")
-            nextjs_process.terminate()
-            
-            # Wait a bit for graceful shutdown
-            time.sleep(2)
-            
-            # Force kill if still running
-            if nextjs_process.poll() is None:
-                logging.info("Force killing Next.js process...")
-                nextjs_process.kill()
-                
-            logging.info("Next.js process terminated")
-        except Exception as e:
-            logging.warning(f"Error terminating Next.js process: {e}")
-    
-    # Clean up Flask process (if running in separate process)
-    try:
-        # Find and kill Flask processes
-        result = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq python.exe'], 
-                              capture_output=True, text=True, check=False)
-        if result.returncode == 0:
-            lines = result.stdout.split('\n')
-            for line in lines:
-                if 'python.exe' in line and 'app.py' in line:
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        pid = parts[1]
-                        try:
-                            logging.info(f"Terminating Flask process (PID: {pid})")
-                            subprocess.run(['taskkill', '/PID', pid, '/F'], check=False)
-                        except Exception as e:
-                            logging.warning(f"Error terminating Flask process {pid}: {e}")
-    except Exception as e:
-        logging.warning(f"Error checking for Flask processes: {e}")
-    
-    # Clean up any remaining Python processes related to this launcher
-    try:
-        current_pid = os.getpid()
-        result = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq python.exe'], 
-                              capture_output=True, text=True, check=False)
-        if result.returncode == 0:
-            lines = result.stdout.split('\n')
-            for line in lines:
-                if 'python.exe' in line:
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        pid = parts[1]
-                        if pid.isdigit() and int(pid) != current_pid:
-                            try:
-                                # Check if this is a child process
-                                parent_result = subprocess.run(['wmic', 'process', 'where', f'ProcessId={pid}', 'get', 'ParentProcessId'], 
-                                                            capture_output=True, text=True, check=False)
-                                if str(current_pid) in parent_result.stdout:
-                                    logging.info(f"Terminating child process (PID: {pid})")
-                                    subprocess.run(['taskkill', '/PID', pid, '/F'], check=False)
-                            except Exception as e:
-                                logging.warning(f"Error checking process {pid}: {e}")
-    except Exception as e:
-        logging.warning(f"Error checking for child processes: {e}")
-    
-    # Clean up ports
-    try:
-        if 'nextjs_port_global' in globals() and nextjs_port_global:
-            logging.info(f"Checking if port {nextjs_port_global} is still in use...")
-            if not check_port_available(nextjs_port_global):
-                logging.info(f"Port {nextjs_port_global} is still in use, attempting to free it...")
-                # The port should be freed when the process is terminated
-    except Exception as e:
-        logging.warning(f"Error checking port status: {e}")
-    
-    # Clean up threads
-    try:
-        if 'flask_thread' in globals() and flask_thread and flask_thread.is_alive():
-            logging.info("Flask thread is still running, it will terminate with main process")
-        if 'nextjs_thread' in globals() and nextjs_thread and nextjs_thread.is_alive():
-            logging.info("Next.js thread is still running, it will terminate with main process")
-    except Exception as e:
-        logging.warning(f"Error checking thread status: {e}")
-    
-    # Final cleanup - kill any remaining processes that might be using our ports
-    try:
-        if 'nextjs_port_global' in globals() and nextjs_port_global:
-            logging.info(f"Performing final cleanup for port {nextjs_port_global}...")
-            # Use netstat to find processes using our port
-            result = subprocess.run(['netstat', '-ano'], capture_output=True, text=True, check=False)
-            if result.returncode == 0:
-                lines = result.stdout.split('\n')
-                for line in lines:
-                    if f':{nextjs_port_global}' in line and 'LISTENING' in line:
-                        parts = line.split()
-                        if len(parts) >= 5:
-                            pid = parts[-1]
-                            try:
-                                logging.info(f"Found process {pid} still using port {nextjs_port_global}, terminating...")
-                                subprocess.run(['taskkill', '/PID', pid, '/F'], check=False)
-                            except Exception as e:
-                                logging.warning(f"Error terminating process {pid}: {e}")
-    except Exception as e:
-        logging.warning(f"Error during final port cleanup: {e}")
-    
-    logging.info("Process cleanup completed")
-
-def signal_handler(signum, frame):
-    """Handle system signals for graceful shutdown"""
-    logging.info(f"Received signal {signum}. Shutting down gracefully...")
-    cleanup_processes()
-    sys.exit(0)
-
-def windows_cleanup_handler():
-    """Windows-specific cleanup handler for when console window is closed"""
-    logging.info("Windows console window closing detected. Cleaning up processes...")
-    cleanup_processes()
-
-def setup_cleanup_handlers():
-    """Set up various cleanup handlers for different exit scenarios"""
-    # Register cleanup function to run at exit
-    atexit.register(cleanup_processes)
-    
-    # Set up signal handlers for Unix-like systems
-    try:
-        signal.signal(signal.SIGINT, signal_handler)   # Ctrl+C
-        signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
-    except (AttributeError, OSError):
-        # Windows doesn't support SIGTERM
-        pass
-    
-    # Windows-specific cleanup
-    if os.name == 'nt':  # Windows
-        try:
-            import ctypes
-            from ctypes import wintypes
-            
-            # Define Windows API constants
-            CTRL_CLOSE_EVENT = 2
-            CTRL_LOGOFF_EVENT = 5
-            CTRL_SHUTDOWN_EVENT = 6
-            
-            # Define the handler function
-            def windows_handler(ctrl_type):
-                if ctrl_type in [CTRL_CLOSE_EVENT, CTRL_LOGOFF_EVENT, CTRL_SHUTDOWN_EVENT]:
-                    logging.info("Windows console event detected. Cleaning up...")
-                    cleanup_processes()
-                    return True
-                return False
-            
-            # Set the console control handler
-            kernel32 = ctypes.windll.kernel32
-            kernel32.SetConsoleCtrlHandler(ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)(windows_handler), True)
-            logging.info("Windows console control handler installed")
-        except Exception as e:
-            logging.warning(f"Could not install Windows console control handler: {e}")
-            logging.info("Will rely on atexit handler for cleanup")
-    
-    # Additional Windows-specific cleanup for when console window is closed
-    if os.name == 'nt':
-        try:
-            # Create a thread that monitors if the parent console is still alive
-            def console_monitor():
-                while True:
-                    try:
-                        # Check if we can still access the console
-                        if not os.isatty(sys.stdout.fileno()):
-                            logging.info("Console appears to be closed. Initiating cleanup...")
-                            cleanup_processes()
-                            break
-                        time.sleep(1)
-                    except Exception:
-                        # Console is likely closed
-                        logging.info("Console access lost. Initiating cleanup...")
-                        cleanup_processes()
-                        break
-            
-            console_thread = Thread(target=console_monitor, daemon=True)
-            console_thread.start()
-            logging.info("Console monitor thread started")
-        except Exception as e:
-            logging.warning(f"Could not start console monitor: {e}")
 
 def is_tool(name):
     """Check whether `name` is on PATH and marked as executable."""
@@ -834,6 +647,168 @@ def run_nextjs():
     except Exception as e:
         logging.error(f"Error starting Next.js server: {str(e)}")
         return
+
+def cleanup_processes():
+    """Clean up all processes and resources when shutting down"""
+    logging.info("Starting process cleanup...")
+    
+    # Clean up Next.js process
+    try:
+        if 'nextjs_process' in globals() and nextjs_process:
+            logging.info(f"Terminating Next.js process (PID: {nextjs_process.pid})")
+            nextjs_process.terminate()
+            nextjs_process.wait(timeout=5)
+            logging.info("Next.js process terminated successfully")
+    except Exception as e:
+        logging.warning(f"Error terminating Next.js process: {e}")
+        try:
+            if 'nextjs_process' in globals() and nextjs_process:
+                nextjs_process.kill()
+                logging.info("Force killed Next.js process")
+        except Exception as e2:
+            logging.warning(f"Error force killing Next.js process: {e2}")
+    
+    # Clean up Flask processes
+    try:
+        result = subprocess.run(['netstat', '-ano'], capture_output=True, text=True, check=False)
+        if result.returncode == 0:
+            lines = result.stdout.split('\n')
+            for line in lines:
+                if ':5000' in line and 'LISTENING' in line:
+                    parts = line.split()
+                    if len(parts) >= 5:
+                        pid = parts[-1]
+                        try:
+                            logging.info(f"Terminating Flask process (PID: {pid})")
+                            subprocess.run(['taskkill', '/PID', pid, '/F'], check=False)
+                        except Exception as e:
+                            logging.warning(f"Error terminating Flask process {pid}: {e}")
+    except Exception as e:
+        logging.warning(f"Error checking for Flask processes: {e}")
+    
+    # Clean up any remaining Python processes related to this launcher
+    try:
+        current_pid = os.getpid()
+        result = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq python.exe'], 
+                              capture_output=True, text=True, check=False)
+        if result.returncode == 0:
+            lines = result.stdout.split('\n')
+            for line in lines:
+                if 'python.exe' in line:
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        pid = parts[1]
+                        if pid.isdigit() and int(pid) != current_pid:
+                            try:
+                                # Check if this is a child process
+                                parent_result = subprocess.run(['wmic', 'process', 'where', f'ProcessId={pid}', 'get', 'ParentProcessId'], 
+                                                            capture_output=True, text=True, check=False)
+                                if str(current_pid) in parent_result.stdout:
+                                    logging.info(f"Terminating child process (PID: {pid})")
+                                    subprocess.run(['taskkill', '/PID', pid, '/F'], check=False)
+                            except Exception as e:
+                                logging.warning(f"Error checking process {pid}: {e}")
+    except Exception as e:
+        logging.warning(f"Error checking for child processes: {e}")
+    
+    # Clean up ports
+    try:
+        if 'nextjs_port_global' in globals() and nextjs_port_global:
+            logging.info(f"Checking if port {nextjs_port_global} is still in use...")
+            if not check_port_available(nextjs_port_global):
+                logging.info(f"Port {nextjs_port_global} is still in use, attempting to free it...")
+                # The port should be freed when the process is terminated
+    except Exception as e:
+        logging.warning(f"Error checking port status: {e}")
+    
+    # Clean up threads
+    try:
+        if 'flask_thread' in globals() and flask_thread and flask_thread.is_alive():
+            logging.info("Flask thread is still running, it will terminate with main process")
+        if 'nextjs_thread' in globals() and nextjs_thread and nextjs_thread.is_alive():
+            logging.info("Next.js thread is still running, it will terminate with main process")
+    except Exception as e:
+        logging.warning(f"Error checking thread status: {e}")
+    
+    # Final cleanup - kill any remaining processes that might be using our ports
+    try:
+        if 'nextjs_port_global' in globals() and nextjs_port_global:
+            logging.info(f"Performing final cleanup for port {nextjs_port_global}...")
+            # Use netstat to find processes using our port
+            result = subprocess.run(['netstat', '-ano'], capture_output=True, text=True, check=False)
+            if result.returncode == 0:
+                lines = result.stdout.split('\n')
+                for line in lines:
+                    if f':{nextjs_port_global}' in line and 'LISTENING' in line:
+                        parts = line.split()
+                        if len(parts) >= 5:
+                            pid = parts[-1]
+                            try:
+                                logging.info(f"Found process {pid} still using port {nextjs_port_global}, terminating...")
+                                subprocess.run(['taskkill', '/PID', pid, '/F'], check=False)
+                            except Exception as e:
+                                logging.warning(f"Error terminating process {pid}: {e}")
+    except Exception as e:
+        logging.warning(f"Error during final port cleanup: {e}")
+    
+    logging.info("Process cleanup completed")
+
+def signal_handler(signum, frame):
+    """Handle system signals for graceful shutdown"""
+    logging.info(f"Received signal {signum}. Shutting down gracefully...")
+    cleanup_processes()
+    sys.exit(0)
+
+def windows_cleanup_handler():
+    """Windows-specific cleanup handler for when console window is closed"""
+    logging.info("Windows console window closing detected. Cleaning up processes...")
+    cleanup_processes()
+
+def setup_cleanup_handlers():
+    """Set up various cleanup handlers for different exit scenarios"""
+    # Register cleanup function to run at exit
+    atexit.register(cleanup_processes)
+    
+    # Set up signal handlers for Unix-like systems
+    try:
+        signal.signal(signal.SIGINT, signal_handler)   # Ctrl+C
+        signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
+    except (AttributeError, OSError):
+        # Windows doesn't support SIGTERM
+        pass
+    
+    # Windows-specific cleanup
+    if os.name == 'nt':  # Windows
+        try:
+            import ctypes
+            from ctypes import wintypes
+            
+            # Define Windows API constants
+            CTRL_CLOSE_EVENT = 2
+            
+            # Define the handler function
+            def windows_handler(ctrl_type):
+                if ctrl_type == CTRL_CLOSE_EVENT:
+                    windows_cleanup_handler()
+                return True
+            
+            # Set the handler
+            ctypes.windll.kernel32.SetConsoleCtrlHandler(
+                ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)(windows_handler), 
+                True
+            )
+        except Exception as e:
+            logging.warning(f"Could not set up Windows cleanup handler: {e}")
+
+def check_port_available(port):
+    """Check if a port is available"""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(('localhost', port))
+            return True
+    except OSError:
+        return False
 
 def main():
     try:

@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Set
 import lxml.etree as etree
+from .tmx_utils import create_compatible_header
 
 logger = logging.getLogger(__name__)
 
@@ -44,21 +45,104 @@ def merge_tmx_files(file_paths: List[str]) -> str:
 
         concat_list = []                #This list will hold all the TUs present in the tmx_list individual TMs
         header = None
-        for tmx in file_paths:            #Loops through every .tmx file in tmx_list
-            tm : etree._ElementTree = etree.parse(tmx, etree.XMLParser(encoding="utf-8"))
-            tmx_root: etree._Element = tm.getroot()
-            tmx_obj: PythonTmx.TmxElement = PythonTmx.from_element(tmx_root)          #Converts it to a TMX object
-            if header == None:
-                header: PythonTmx.Header = tmx_obj.header
-                header.adminlang = "en-US"
-                header.creationtool = "TMX Merger"
-                header.creationtoolversion = "1.0"
-            concat_list.extend(tmx_obj)
+        
+        for tmx_file in file_paths:            #Loops through every .tmx file in tmx_list
+            try:
+                # Try to load with PythonTmx first
+                tmx_obj = PythonTmx.Tmx(tmx_file)
+                if header is None:
+                    header = create_compatible_header(tmx_obj.header, "TMX Merger", "1.0")
+                concat_list.extend(tmx_obj.tus)
+            except Exception as e:
+                logger.warning(f"Failed to load {tmx_file} with PythonTmx, trying lxml fallback: {e}")
+                # Fallback to robust lxml parsing with multiple strategies
+                tm = None
+                tmx_root = None
+                
+                # Try multiple parsing strategies
+                parsing_strategies = [
+                    lambda: etree.parse(tmx_file),  # Auto-detect encoding (handles BOM)
+                    lambda: etree.parse(tmx_file, etree.XMLParser(recover=True)),  # Recover from errors
+                    lambda: etree.parse(tmx_file, etree.XMLParser(encoding="utf-8")),  # Explicit UTF-8
+                    lambda: etree.parse(tmx_file, etree.XMLParser(encoding="cp1252")),  # Windows encoding
+                    lambda: etree.parse(tmx_file, etree.XMLParser(encoding="latin-1"))  # Latin encoding
+                ]
+                
+                for strategy in parsing_strategies:
+                    try:
+                        tm = strategy()
+                        if tm is not None and tm.getroot() is not None:
+                            tmx_root = tm.getroot()
+                            break  # Successfully parsed, exit loop
+                    except Exception as parse_e:
+                        logger.info(f"Parsing strategy failed: {parse_e}")
+                        continue
+                
+                if tmx_root is None:
+                    raise ValueError(f"Failed to parse {tmx_file} with all parsing strategies")
+                
+                # Extract header attributes from XML if this is the first file
+                if header is None:
+                    header_elem = tmx_root.find('header')
+                    if header_elem is None:
+                        raise ValueError(f"No header element found in {tmx_file}")
+                    
+                    # Create a minimal header object for compatibility
+                    header_attrs = {}
+                    for attr_name in ['creationtool', 'creationtoolversion', 'adminlang', 'srclang', 'segtype', 'datatype']:
+                        if attr_name in header_elem.attrib:
+                            header_attrs[attr_name] = header_elem.attrib[attr_name]
+                    
+                    # Convert string segtype to enum if needed
+                    segtype_str = header_attrs.get('segtype', 'sentence')
+                    if segtype_str == 'sentence':
+                        segtype_enum = PythonTmx.SEGTYPE.SENTENCE
+                    elif segtype_str == 'paragraph':
+                        segtype_enum = PythonTmx.SEGTYPE.PARAGRAPH
+                    elif segtype_str == 'phrase':
+                        segtype_enum = PythonTmx.SEGTYPE.PHRASE
+                    elif segtype_str == 'block':
+                        segtype_enum = PythonTmx.SEGTYPE.BLOCK
+                    else:
+                        segtype_enum = PythonTmx.SEGTYPE.SENTENCE  # Default fallback
+                    
+                    minimal_header = PythonTmx.Header(
+                        creationtool=header_attrs.get('creationtool', 'Unknown Tool'),
+                        creationtoolversion=header_attrs.get('creationtoolversion', '1.0'),
+                        adminlang=header_attrs.get('adminlang', 'en'),
+                        srclang=header_attrs.get('srclang', 'en'),
+                        segtype=segtype_enum,
+                        datatype=header_attrs.get('datatype', 'xml'),
+                        tmf="tmx",  # Required parameter
+                        encoding="utf8"  # Required parameter
+                    )
+                    
+                    header = create_compatible_header(minimal_header, "TMX Merger", "1.0")
+                
+                # Parse TUs manually from XML
+                body_elem = tmx_root.find('body')
+                if body_elem is not None:
+                    for tu_elem in body_elem.findall('tu'):
+                        tu = PythonTmx.Tu()
+                        for tuv_elem in tu_elem.findall('tuv'):
+                            lang = tuv_elem.get('{http://www.w3.org/XML/1998/namespace}lang', 'en')
+                            seg_elem = tuv_elem.find('seg')
+                            if seg_elem is not None and seg_elem.text:
+                                tuv = PythonTmx.Tuv(lang=lang)
+                                tuv.content = seg_elem.text
+                                tu.tuvs.append(tuv)
+                        if len(tu.tuvs) >= 2:  # Only add TUs with both source and target
+                            concat_list.append(tu)
 
         merged_tm = PythonTmx.Tmx(header=header, tus=concat_list)
-
-        new_tmx_root: etree._Element = PythonTmx.to_element(merged_tm, True)
-        etree.ElementTree(new_tmx_root).write(output_path, encoding="utf-8", xml_declaration=True)
+        # Save TMX file using the correct method
+        try:
+            # Use the to_tmx method which should exist
+            merged_tm.to_tmx(str(output_path))
+        except AttributeError:
+            # Fallback: use lxml to write the XML directly
+            root = PythonTmx.to_element(merged_tm, True)
+            etree.ElementTree(root).write(str(output_path), encoding="utf-8", xml_declaration=True)
 
         logger.info(f"Merged TMX created with {len(concat_list)} TUs")
         return str(output_path)

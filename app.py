@@ -6,18 +6,24 @@ import logging
 from datetime import datetime
 import zipfile
 import io
+import json
 from werkzeug.utils import secure_filename
 import secrets
 from pathlib import Path
 import shutil
-from scripts.split_tmx import split_by_language, split_by_size
-from scripts.convert_vatv import process_csv_file
-from scripts.convert_termweb import process_excel_file
-from scripts.batch_process import batch_process_1_5, batch_process_1_5_9
-from scripts.merge_tmx import merge_tmx_files
-from scripts.xliff_operations import leverage_tmx_into_xliff, check_empty_targets
-from scripts.clean_tmx_for_mt import clean_tmx_for_mt
-import json
+
+# CRITICAL: Make Flask completely self-contained and path-independent
+# Get the directory where THIS Flask app is running
+current_app_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Add the scripts directory relative to THIS Flask app
+scripts_dir = os.path.join(current_app_dir, 'scripts')
+if scripts_dir not in sys.path:
+    sys.path.insert(0, scripts_dir)
+
+# Add the current app directory to Python path (for relative imports)
+if current_app_dir not in sys.path:
+    sys.path.insert(0, current_app_dir)
 
 # Configure logging before anything else
 logging.basicConfig(
@@ -28,50 +34,63 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Get the absolute path to PythonTmx
-project_root = os.path.dirname(os.path.abspath(__file__))
-tmx_path = os.path.join(project_root, 'tmx', 'Lib', 'site-packages')
-pythontmx_path = os.path.join(tmx_path, 'PythonTmx')
-
-# Add both paths to sys.path before any imports
-if pythontmx_path not in sys.path:
-    sys.path.insert(0, pythontmx_path)
-if tmx_path not in sys.path:
-    sys.path.insert(0, tmx_path)
-
-# Import PythonTmx first before other imports
+# Import PythonTmx from the current environment (not hardcoded paths)
 try:
     import PythonTmx
-    logger.info("Successfully imported PythonTmx")
+    logger.info("Successfully imported PythonTmx from current environment")
 except ImportError as e:
     logger.critical(f"Failed to import PythonTmx: {e}")
+    logger.critical("Make sure PythonTmx is installed in the current virtual environment")
     raise
 
-# Import your existing functions from the scripts package
+# Import all script functions from the current scripts directory
 try:
+    # Core TMX operations
+    from scripts.remove_empty import empty_targets
+    from scripts.remove_duplicates import find_true_duplicates
     from scripts.remove_old import remove_old_tus
-    from scripts import (empty_targets, find_true_duplicates, 
-                        extract_non_true_duplicates, find_sentence_level_segments,
-                        convert_vatv_to_tmx, convert_termweb_to_tmx, merge_tmx_files,
-                        clean_tmx_for_mt)
+    from scripts.remove_sentence import find_sentence_level_segments
+    from scripts.remove_context_props import remove_context_props_from_file
+    
+    # Conversion operations
+    from scripts.convert_vatv import process_csv_file as convert_vatv_to_tmx
+    from scripts.convert_termweb import process_excel_file as convert_termweb_to_tmx
+    
+    # Processing operations
+    from scripts.clean_tmx_for_mt import clean_tmx_for_mt
     from scripts.batch_process import batch_process_1_5, batch_process_1_5_9
+    from scripts.merge_tmx import merge_tmx_files
+    from scripts.split_tmx import split_by_language, split_by_size
+    
+    # Analysis operations
+    from scripts.extract_ntds import extract_non_true_duplicates
     from scripts.extract_translations import extract_translations
     from scripts.count_creation_dates import count_creation_dates
     from scripts.count_last_usage import count_last_usage_dates
     from scripts.find_date_duplicates import process_file as find_date_duplicates
+    
+    # XLIFF operations
+    from scripts.xliff_operations import leverage_tmx_into_xliff, check_empty_targets
+    
+    logger.info("Successfully imported all script modules from current scripts directory")
+    
 except ImportError as e:
     logger.critical(f"Failed to import script modules: {e}")
+    logger.critical(f"Current scripts directory: {scripts_dir}")
+    logger.critical(f"Python path: {sys.path}")
     raise
 
-# Update the Flask app initialization section
+# Flask app initialization - completely self-contained
 if getattr(sys, 'frozen', False):
+    # For compiled/packaged versions
     application_path = os.path.dirname(sys.executable)
     template_folder = os.path.join(sys._MEIPASS, 'templates')
     app = Flask(__name__, 
                 template_folder=template_folder,
                 static_folder=os.path.join(template_folder, 'static'))
 else:
-    application_path = os.path.dirname(os.path.abspath(__file__))
+    # For development - use current directory
+    application_path = current_app_dir
     app = Flask(__name__,
                 template_folder='templates',
                 static_folder='static')
@@ -79,7 +98,7 @@ else:
 # Enable CORS
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-# Application Configuration
+# Application Configuration - all paths relative to current app directory
 app.config.update(
     UPLOAD_FOLDER=os.path.join(application_path, 'uploads'),
     MAX_CONTENT_LENGTH=1024 * 1024 * 1024,  # 1024MB max file size
@@ -93,6 +112,46 @@ app.config.update(
 # Ensure upload directory exists
 upload_dir = Path(app.config['UPLOAD_FOLDER'])
 upload_dir.mkdir(parents=True, exist_ok=True)
+
+# Log startup information for debugging
+logger.info("=" * 80)
+logger.info("FLASK APP STARTUP")
+logger.info("=" * 80)
+logger.info(f"Current working directory: {os.getcwd()}")
+logger.info(f"Flask app directory: {current_app_dir}")
+logger.info(f"Scripts directory: {scripts_dir}")
+logger.info(f"Upload directory: {app.config['UPLOAD_FOLDER']}")
+logger.info(f"Python path: {sys.path[:3]}...")  # Show first 3 entries
+logger.info("=" * 80)
+
+def verify_import_locations():
+    """Verify that all imported functions are from the correct scripts directory"""
+    logger.info("VERIFYING IMPORT LOCATIONS:")
+    
+    # Check key functions
+    functions_to_check = [
+        ('empty_targets', empty_targets),
+        ('find_true_duplicates', find_true_duplicates),
+        ('remove_old_tus', remove_old_tus),
+        ('clean_tmx_for_mt', clean_tmx_for_mt),
+        ('merge_tmx_files', merge_tmx_files),
+        ('split_by_language', split_by_language),
+    ]
+    
+    for func_name, func in functions_to_check:
+        try:
+            func_file = func.__code__.co_filename
+            if scripts_dir in func_file:
+                logger.info(f"[OK] {func_name}: {func_file}")
+            else:
+                logger.warning(f"[WARN] {func_name}: {func_file} (NOT from current scripts directory!)")
+        except Exception as e:
+            logger.warning(f"[WARN] {func_name}: Could not verify location - {e}")
+    
+    logger.info("=" * 80)
+
+# Verify imports on startup
+verify_import_locations()
 
 def cleanup_old_files():
     """Clean up files older than 4 hours"""
@@ -155,19 +214,55 @@ def handle_tmx_operation(func):
             raise
     return wrapper
 
-# Update OPERATIONS to use the decorator
+# Special wrapper functions for operations needing different parameters
+def merge_tmx_wrapper(filepath):
+    """Wrapper for merge_tmx that converts single file to list for UI compatibility"""
+    # For UI compatibility, when called with single file, merge with itself
+    # In practice, UI should handle this differently for multiple files
+    return merge_tmx_files([filepath])
+
+def split_size_wrapper(filepath, max_tus=50000):
+    """Wrapper for split_by_size with default max_tus"""
+    return split_by_size(filepath, max_tus)
+
+def xliff_leverage_wrapper(xliff_filepath, tmx_filepath=None):
+    """Wrapper for XLIFF leveraging operations"""
+    if tmx_filepath is None:
+        raise ValueError("TMX file required for XLIFF leveraging")
+    return leverage_tmx_into_xliff(tmx_filepath, xliff_filepath)
+
+# Update OPERATIONS to use the decorator - ALL 21 SCRIPTS
 OPERATIONS = {
+    # File conversion operations
     'convert_vatv': handle_tmx_operation(convert_vatv_to_tmx),
     'convert_termweb': handle_tmx_operation(convert_termweb_to_tmx),
+    
+    # Core TMX cleaning operations
     'remove_empty': handle_tmx_operation(empty_targets),
     'find_duplicates': handle_tmx_operation(find_true_duplicates),
     'non_true_duplicates': handle_tmx_operation(extract_non_true_duplicates),
+    'remove_sentence': handle_tmx_operation(find_sentence_level_segments),
+    'remove_old': handle_tmx_operation(remove_old_tus),
     'clean_mt': handle_tmx_operation(clean_tmx_for_mt),
-    'merge_tmx': handle_tmx_operation(merge_tmx_files),
+    
+    # Analysis operations
+    'count_last_usage': handle_tmx_operation(count_last_usage_dates),
+    'count_creation_dates': handle_tmx_operation(count_creation_dates),
+    'extract_translations': handle_tmx_operation(extract_translations),
+    'find_date_duplicates': handle_tmx_operation(find_date_duplicates),
+    'remove_context_props': handle_tmx_operation(remove_context_props_from_file),
+    
+    # File manipulation operations
+    'merge_tmx': handle_tmx_operation(merge_tmx_wrapper),  # Uses wrapper for UI compatibility
     'split_language': handle_tmx_operation(split_by_language),
-    'split_size': handle_tmx_operation(split_by_size),
+    'split_size': handle_tmx_operation(split_size_wrapper),  # Uses wrapper with default size
+    
+    # Batch operations
     'batch_process_tms': handle_tmx_operation(batch_process_1_5),
-    'batch_process_mt': handle_tmx_operation(batch_process_1_5_9)
+    'batch_process_mt': handle_tmx_operation(batch_process_1_5_9),
+    
+    # XLIFF operations (handled by special route, kept here for reference)
+    'xliff_tmx_leverage': handle_tmx_operation(xliff_leverage_wrapper)  # Uses wrapper for 2 files
 }
 
 @app.route('/queue/', methods=['GET', 'POST'])
@@ -196,6 +291,7 @@ def queue():
                 if type(result_list) == tuple and len(result_list) > 1 :
                     result = result_list[0]
                     garbage.append(result_list[1])
+                    
                 else:
                     result = result_list
                 
@@ -305,19 +401,31 @@ def index():
                 result_list = None
                 if len(file_list) > 1:
                     if operation == 'merge_tmx':
-                        result_list = process_file(operation, file_list)
+                        result_list = merge_tmx_files(file_list)
                     elif operation == 'split_size':
                         result_list = split_by_size(file_list, request.form.get('size'))
                     else:
                         result_list = []
                         for file in file_list:
-                            result = process_file(operation, file)
+                            # Get cutoff_date if available
+                            cutoff_date = request.form.get('cutoff_date')
+                            if cutoff_date and operation in ['remove_old', 'find_date_duplicates']:
+                                result = process_file(operation, file, cutoff_date=cutoff_date)
+                            else:
+                                result = process_file(operation, file)
                             result_list.append(result)         
                 else:
                     if operation == 'split_size':
                         result_list = split_by_size(file_list[0], request.form.get('size'))
+                    elif operation == 'split_language':
+                        result_list = split_by_language(file_list[0])
                     else:
-                        result_list = process_file(operation, file_list[0])
+                        # Get cutoff_date if available
+                        cutoff_date = request.form.get('cutoff_date')
+                        if cutoff_date and operation in ['remove_old', 'find_date_duplicates']:
+                            result_list = process_file(operation, file_list[0], cutoff_date=cutoff_date)
+                        else:
+                            result_list = process_file(operation, file_list[0])
                         
 
                 
@@ -393,7 +501,7 @@ def internal_error(e):
     flash('An internal error occurred. Please try again later.', 'error')
     return redirect(url_for('index'))
 
-def process_file(operation: str, filepath: str) -> str:
+def process_file(operation: str, filepath: str, **kwargs) -> str:
     """Process the uploaded file with the selected operation"""
     try:
         if operation not in OPERATIONS:
@@ -402,7 +510,12 @@ def process_file(operation: str, filepath: str) -> str:
         logger.info(f"Starting operation {operation} on file {filepath}")
         
         # Process the file
-        result = OPERATIONS[operation](filepath)
+        if operation == 'remove_old' and 'cutoff_date' in kwargs:
+            result = OPERATIONS[operation](filepath, kwargs['cutoff_date'])
+        elif operation == 'find_date_duplicates' and 'cutoff_date' in kwargs:
+            result = OPERATIONS[operation](filepath, kwargs['cutoff_date'])
+        else:
+            result = OPERATIONS[operation](filepath)
         
         # If result is a string (file path), return it
         if isinstance(result, str):
@@ -412,12 +525,6 @@ def process_file(operation: str, filepath: str) -> str:
             
         # If result is a list of files, zip them
         elif isinstance(result, tuple):
-            #memory_file = io.BytesIO()
-            #with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-            #    for file_path in result:
-            #        if os.path.exists(file_path):
-            #            zf.write(file_path, os.path.basename(file_path))
-            #memory_file.seek(0)
             return result
             
         else:

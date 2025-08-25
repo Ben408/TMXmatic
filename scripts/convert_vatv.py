@@ -179,7 +179,14 @@ def process_csv_file(file_path: str) -> tuple[str, list[tuple[str, str]]]:
 
 
             
-            #tmx.save(str(output_path))
+            ## Save TMX file using the correct method
+        try:
+            # Use the to_tmx method which should exist
+            tmx.to_tmx(str(output_path))
+        except AttributeError:
+            # Fallback: use lxml to write the XML directly
+            root = PythonTmx.to_element(tmx, True)
+            etree.ElementTree(root).write(str(output_path), encoding="utf-8", xml_declaration=True)
             
             # Log results
             logs.append(("info", f"Created TMX with {len(tmx.tus)} TUs"))

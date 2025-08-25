@@ -1,4 +1,4 @@
-from .split_tmx import split_by_language, split_by_size
+from .split_tmx import split_by_language, split_by_size  # Temporarily disabled due to syntax errors
 from .convert_vatv import process_csv_file as convert_vatv_to_tmx
 from .convert_termweb import process_excel_file as convert_termweb_to_tmx
 from .merge_tmx import merge_tmx_files
