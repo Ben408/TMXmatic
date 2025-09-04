@@ -18,6 +18,8 @@ from scripts.merge_tmx import merge_tmx_files
 from scripts.xliff_operations import leverage_tmx_into_xliff, check_empty_targets
 from scripts.clean_tmx_for_mt import clean_tmx_for_mt
 import json
+from dependency_manager import DependencyManager, DependencyCategories
+
 
 # Configure logging before anything else
 logging.basicConfig(
@@ -169,6 +171,40 @@ OPERATIONS = {
     'batch_process_tms': handle_tmx_operation(batch_process_1_5),
     'batch_process_mt': handle_tmx_operation(batch_process_1_5_9)
 }
+
+@app.route('/api/check-feature', methods=['GET'])
+def check_feature():
+    feature = request.args.get('feature')
+    if not feature:
+        return jsonify({'error': 'Feature parameter required'}), 400
+    
+    dep_manager = DependencyManager(get_application_path())
+    feature_deps = DependencyCategories.OPTIONAL_FEATURES.get(feature, [])
+    
+    available = all(dep_manager.is_package_installed(dep) for dep in feature_deps)
+    return jsonify({'available': available})
+
+@app.route('/api/install-feature', methods=['POST'])
+def install_feature():
+    data = request.get_json()
+    feature = data.get('feature')
+    
+    if not feature:
+        return jsonify({'error': 'Feature parameter required'}), 400
+    
+    dep_manager = DependencyManager(get_application_path())
+    feature_deps = DependencyCategories.OPTIONAL_FEATURES.get(feature, [])
+    
+    if not feature_deps:
+        return jsonify({'error': 'Unknown feature'}), 400
+    
+    success = True
+    for dep in feature_deps:
+        if not dep_manager.install_package(dep):
+            success = False
+            break
+    
+    return jsonify({'success': success})
 
 @app.route('/queue/', methods=['GET', 'POST'])
 def queue():

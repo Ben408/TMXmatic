@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 import logging
 import lxml.etree as etree
+from .tmx_utils import create_compatible_header
 
 logger = logging.getLogger(__name__)
 
@@ -27,18 +28,33 @@ def empty_targets(file_path: str) -> tuple[str, str]:
 
         # Load TMX file
         tm : etree._ElementTree = etree.parse(str(input_path), etree.XMLParser(encoding="utf-8"))
-        tmx_root: etree._Element = tm.getroot()
-        tmx: PythonTmx.TmxElement = PythonTmx.from_element(tmx_root)
+        tmx_root: etree._Element = tm.getroot() 
 
 
+        tm_parse : etree._Element = etree.ElementTree(create_compatible_header(tmx_root[0], "TMX Cleaner", "1.0")).getroot()
+        print("done")
+        tmx_tuple = ()
+        tmx: PythonTmx.TmxElement = PythonTmx.from_element(create_compatible_header(tmx_root[0], "TMX Cleaner", "1.0"), tmx_root[1])
+        
+
+        #tmx_header = create_compatible_header(tmx_root[0])
+        #print("pre header")
+       #
+#
+#
+        #tmx: PythonTmx.TmxElement = PythonTmx.Tmx(header=tmx_header)
+        #print("llego")
+#
+        #tmx.tus = PythonTmx.Tmx.tus(tmx_root[1].findall('tu'))
+        #print(tmx.tus)
+        
+        print("creo el tmx")
+        
         # Create TMX files for clean and empty TUs
-        clean_tmx = PythonTmx.Tmx(header = tmx.header)
-        empty_tmx = PythonTmx.Tmx(header = tmx.header)
+        clean_tmx = PythonTmx.Tmx(header = tmx_header)
+        empty_tmx = PythonTmx.Tmx(header = tmx_header)
         
         # Copy header properties
-        for tmx_file in [clean_tmx, empty_tmx]:
-            tmx_file.header.creationtool = "TMX Cleaner"
-            tmx_file.header.creationtoolversion = "1.0"
 
         clean_count = empty_count = 0
         # Process TUs

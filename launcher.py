@@ -12,6 +12,92 @@ from datetime import datetime
 import importlib.util
 import signal
 import atexit
+from dependency_manager import DependencyManager, DependencyCategories
+
+def setup_dynamic_dependencies():
+    """Set up dynamic dependency installation"""
+    logging.info("Setting up dynamic dependency management...")
+    
+    app_path = get_application_path()
+    dep_manager = DependencyManager(app_path)
+    
+    # Check if we have a minimal package.json
+    #if not os.path.exists(dep_manager.package_json_path):
+    #    logging.info("Creating minimal package.json...")
+    #    create_minimal_package_json(dep_manager)
+    
+    # Install core runtime dependencies
+    logging.info("Installing core runtime dependencies...")
+    install_core_dependencies(dep_manager)
+    
+    # Check if build tools are needed
+    if needs_build_tools():
+        logging.info("Build tools not detected, will install on first build...")
+        setup_build_tools_installation(dep_manager)
+    
+    return True
+
+def install_core_dependencies(dep_manager: DependencyManager):
+    """Install only core runtime dependencies"""
+    missing_core = []
+    
+    for package in DependencyCategories.CORE_RUNTIME:
+        if not dep_manager.is_package_installed(package):
+            missing_core.append(package)
+    
+    if missing_core:
+        logging.info(f"Installing {len(missing_core)} core dependencies...")
+        for package in missing_core:
+            if not dep_manager.install_package(package):
+                logging.error(f"Failed to install core dependency: {package}")
+                return False
+    
+    logging.info("Core dependencies installed successfully")
+    return True
+
+def setup_build_tools_installation(dep_manager: DependencyManager):
+    """Set up build tools for installation on first build"""
+    build_tools_script = os.path.join(dep_manager.nextjs_path, "scripts", "install-build-tools.js")
+    
+    os.makedirs(os.path.dirname(build_tools_script), exist_ok=True)
+    
+    with open(build_tools_script, 'w') as f:
+        f.write("""
+const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+console.log('Installing build tools...');
+
+const buildTools = [
+    'next',
+    'typescript',
+    '@types/node',
+    '@types/react',
+    '@types/react-dom', 
+    '@types/jszip',
+    'tailwindcss',
+    'postcss',
+    'autoprefixer'
+];
+
+try {
+    execSync(`npm install --save-dev ${buildTools.join(' ')}`, { stdio: 'inherit' });
+    console.log('Build tools installed successfully');
+} catch (error) {
+    console.error('Failed to install build tools:', error);
+    process.exit(1);
+}
+""")
+
+def needs_build_tools() -> bool:
+    """Check if build tools are needed"""
+    app_path = get_application_path()
+    nextjs_path = os.path.join(app_path, "dist", "New_UI")
+    
+    # Check if Next.js is installed
+    next_path = os.path.join(nextjs_path, "node_modules", "next")
+    return not os.path.exists(next_path)
 
 # Set up logging to both file and console
 def setup_logging():
