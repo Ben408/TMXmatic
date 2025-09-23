@@ -8,6 +8,8 @@ import { ConversionHistory } from "./conversion-history"
 import { Button } from "@/components/ui/button"
 import { Download } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { list } from "postcss"
+import { List } from "postcss/lib/list"
 
 export type WorkspaceFile = {
   id: string
@@ -48,7 +50,6 @@ export function FileConversionWorkspace() {
       operations: [],
       relatedFiles: {},
     }))
-
     setFiles((prev) => [...prev, ...workspaceFiles])
 
     if (workspaceFiles.length > 0 && !selectedFileId) {

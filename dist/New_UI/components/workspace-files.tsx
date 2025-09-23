@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useRef, useEffect } from "react"
 import type { WorkspaceFile } from "./tmx-workspace"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -21,6 +22,35 @@ export function WorkspaceFiles({
   onRemoveFile,
   onDownloadFile,
 }: WorkspaceFilesProps) {
+  const [height, setHeight] = useState(250)
+  const [isResizing, setIsResizing] = useState(false)
+  const resizeRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return
+      
+      const newHeight = e.clientY - (resizeRef.current?.getBoundingClientRect().top || 0)
+      if (newHeight > 150 && newHeight < 600) {
+        setHeight(newHeight)
+      }
+    }
+
+    const handleMouseUp = () => {
+      setIsResizing(false)
+    }
+
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove)
+      document.addEventListener('mouseup', handleMouseUp)
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isResizing])
+
   if (files.length === 0) {
     return (
       <Card>
@@ -41,8 +71,8 @@ export function WorkspaceFiles({
       <CardHeader>
         <CardTitle>Workspace Files ({files.length})</CardTitle>
       </CardHeader>
-      <CardContent>
-        <ScrollArea className="h-[250px] pr-4">
+      <CardContent className="relative">
+        <ScrollArea className="pr-4" style={{ height: `${height}px` }}>
           <div className="space-y-2">
             {files.map((file) => (
               <div
@@ -90,6 +120,15 @@ export function WorkspaceFiles({
             ))}
           </div>
         </ScrollArea>
+        {/* Resize handle */}
+        <div
+          ref={resizeRef}
+          className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize bg-transparent hover:bg-muted/20 transition-colors"
+          onMouseDown={() => setIsResizing(true)}
+          style={{ cursor: 'ns-resize' }}
+        >
+          <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2 w-8 h-0.5 bg-muted-foreground/30 rounded"></div>
+        </div>
       </CardContent>
     </Card>
   )

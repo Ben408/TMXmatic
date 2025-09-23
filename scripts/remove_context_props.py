@@ -295,7 +295,7 @@ Examples:
     if args.verbose and results['file_results']:
         print(f"\nDetailed results:")
         for result in results['file_results']:
-            status_icon = "✓" if result['status'] == 'success' else "✗"
+            status_icon = "[OK]" if result['status'] == 'success' else "[FAIL]"
             print(f"  {status_icon} {result['file']}: {result['replacements']} replacements")
     
     # Restore original working directory
