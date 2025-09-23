@@ -319,7 +319,7 @@ def ensure_python_libraries():
     # Final verification and summary
     logging.info("=== Python Library Status Summary ===")
     for library in REQUIRED_LIBRARIES:
-        status = "✓ Installed" if is_library_installed(library) else "✗ Missing"
+        status = "Installed" if is_library_installed(library) else "Missing"
         logging.info(f"  {library}: {status}")
     logging.info("=====================================")
     
@@ -894,7 +894,7 @@ def run_nextjs():
                 # Try to detect the port from the output
                 if nextjs_port is None:
                     # Check common ports
-                    for port in range[3000, 3010]:
+                    for port in range(3000, 3010):
                         if check_server_running(f'http://localhost:{port}'):
                             detected_port = port
                             logging.info(f"Detected Next.js running on port {detected_port}")
