@@ -23,10 +23,18 @@ class DependencyManager:
         return os.path.exists(package_path)
     
     def install_package(self, package_name: str, is_dev: bool = False) -> bool:
+        import shutil
+        
+        # Find npm executable
+        npm_path = shutil.which('npm')
+        if not npm_path:
+            logging.error("npm not found in PATH")
+            return False
+            
         env = os.environ.copy()
         env.setdefault("NPM_CONFIG_FUND", "false")
         env.setdefault("NPM_CONFIG_AUDIT", "false")
-        base = ["npm", "install", "--no-progress", "--prefer-offline", "--no-audit", "--include=prod"]
+        base = [npm_path, "install", "--no-progress", "--prefer-offline", "--no-audit", "--include=prod", "--legacy-peer-deps"]
         if is_dev:
             base.append("--save-dev")
         base.append(package_name)

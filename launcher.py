@@ -30,9 +30,25 @@ def setup_dynamic_dependencies():
     logging.info("Installing core runtime dependencies...")
     install_core_dependencies(dep_manager)
     
-    # Check if build tools are needed
+    # Ensure build tools are present; install any missing now
+    logging.info("Ensuring build tools are installed...")
+    missing_build_tools = []
+    for package in DependencyCategories.BUILD_TOOLS:
+        if not dep_manager.is_package_installed(package):
+            missing_build_tools.append(package)
+    
+    if missing_build_tools:
+        logging.info(f"Installing {len(missing_build_tools)} build tools: {', '.join(missing_build_tools)}")
+        for package in missing_build_tools:
+            if not dep_manager.install_package(package, is_dev=True):
+                logging.error(f"Failed to install build tool: {package}")
+                # Don't abort entire startup; continue to allow later retries
+    else:
+        logging.info("All build tools already installed")
+    
+    # Additionally, if any tool still missing, prepare installer script as fallback
     if needs_build_tools():
-        logging.info("Build tools not detected, will install on first build...")
+        logging.info("Build tools still not fully detected, preparing installer script for first build fallback...")
         setup_build_tools_installation(dep_manager)
     
     return True
@@ -614,31 +630,37 @@ def run_nextjs():
             return
         logging.info(f"Using npm from: {npm_path}")
         
-        # First, install dependencies if node_modules doesn't exist
-        if not os.path.exists(os.path.join(nextjs_path, 'node_modules')):
-            logging.info("Installing Next.js dependencies...")
-            try:
-                # Use --legacy-peer-deps to handle React 19 compatibility issues
-                result = subprocess.run([npm_path, 'install', '--legacy-peer-deps'], 
-                                     check=True, 
-                                     capture_output=True, 
-                                     text=True)
-                logging.info(f"npm install output: {result.stdout}")
-            except subprocess.CalledProcessError as e:
-                logging.error(f"npm install failed: {e.stderr}")
-                logging.info("Trying npm install without legacy peer deps...")
-                try:
-                    result = subprocess.run([npm_path, 'install'], 
-                                         check=True, 
-                                         capture_output=True, 
-                                         text=True)
-                    logging.info(f"npm install (fallback) output: {result.stdout}")
-                except subprocess.CalledProcessError as e2:
-                    logging.error(f"npm install fallback also failed: {e2.stderr}")
-                    logging.error("npm install failed completely. Providing troubleshooting information...")
-                    provide_npm_troubleshooting_info()
+        # Use DependencyManager to ensure all dependencies are installed
+        dep_manager = DependencyManager(application_path)
+        
+        # Install core runtime dependencies first
+        logging.info("Ensuring core runtime dependencies are installed...")
+        missing_core = []
+        for package in DependencyCategories.CORE_RUNTIME:
+            if not dep_manager.is_package_installed(package):
+                missing_core.append(package)
+        
+        if missing_core:
+            logging.info(f"Installing {len(missing_core)} missing core dependencies...")
+            for package in missing_core:
+                if not dep_manager.install_package(package):
+                    logging.error(f"Failed to install core dependency: {package}")
                     return
         
+        # Install build tools if needed
+        logging.info("Ensuring build tools are installed...")
+        missing_build_tools = []
+        for package in DependencyCategories.BUILD_TOOLS:
+            if not dep_manager.is_package_installed(package):
+                missing_build_tools.append(package)
+        
+        if missing_build_tools:
+            logging.info(f"Installing {len(missing_build_tools)} missing build tools...")
+            for package in missing_build_tools:
+                if not dep_manager.install_package(package, is_dev=True):
+                    logging.error(f"Failed to install build tool: {package}")
+                    return
+
         # Build the Next.js application
         logging.info("Building Next.js application...")
         try:
@@ -934,6 +956,12 @@ def main():
         # Check React compatibility
         check_react_compatibility()
         
+        # Set up dynamic dependency management (Node/Next deps)
+        try:
+            setup_dynamic_dependencies()
+        except Exception as e:
+            logging.warning(f"Dynamic dependency setup had issues: {e}")
+
         # Summary of all checks
         logging.info("=" * 60)
         logging.info("ALL DEPENDENCY CHECKS COMPLETED SUCCESSFULLY")

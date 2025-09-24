@@ -48,6 +48,12 @@ exit /b 1
 :have_python
 echo Using Python: %PY_CMD%
 
+echo Running dependency manager...
+%PY_CMD% "dependency_manager.py"
+if errorlevel 1 (
+  echo WARNING: dependency_manager.py encountered an error. Continuing...
+)
+
 if not exist ".venv\Scripts\python.exe" (
   echo Creating virtual environment...
   %PY_CMD% -m venv .venv
