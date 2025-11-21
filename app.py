@@ -523,8 +523,12 @@ def index():
                 filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                 file.save(filepath)
                 # Convert XLIFF to TMX if needed
-                converted_path = convert_xliff_to_tmx_if_needed(filepath)
-                file_list.append(converted_path)
+                if operation not in ('clean_xliff', 'validate_xliff'):
+                    converted_path = convert_xliff_to_tmx_if_needed(filepath)
+                    file_list.append(converted_path)
+                else:
+                    file_list.append(filepath)
+                
             try:
                 result_list = None
                 if len(file_list) > 1:
