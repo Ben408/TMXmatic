@@ -81,6 +81,8 @@ try:
     
     # XLIFF operations
     from scripts.xliff_operations import leverage_tmx_into_xliff, check_empty_targets
+    from scripts.xliff_to_tmx import xliff_to_tmx
+    from scripts.tmx_to_xliff import tmx_to_xliff
     
     logger.info("Successfully imported all script modules from current scripts directory")
     
@@ -201,8 +203,81 @@ def send_processed_files(files, base_filename, operation_name):
 
 def allowed_file(filename):
     """Check if file extension is allowed"""
-    ALLOWED_EXTENSIONS = {'tmx', 'csv', 'xlsx', 'xls', 'zip'}
+    ALLOWED_EXTENSIONS = {'tmx', 'csv', 'xlsx', 'xls', 'zip', 'xlf', 'xliff'}
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def convert_xliff_to_tmx_if_needed(filepath):
+    """Convert XLIFF file to TMX if the file is an XLIFF file, otherwise return original path"""
+    if not os.path.exists(filepath):
+        return filepath
+    
+    # Check if file is XLIFF by extension
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext in ['.xlf', '.xliff']:
+        try:
+            logger.info(f"Converting XLIFF file to TMX: {filepath}")
+            tmx_path, _ = xliff_to_tmx(filepath)
+            # Remove original XLIFF file after conversion
+            try:
+                os.remove(filepath)
+            except Exception as e:
+                logger.warning(f"Could not remove XLIFF file {filepath}: {e}")
+            return tmx_path
+        except Exception as e:
+            logger.error(f"Error converting XLIFF to TMX: {e}")
+            raise
+    return filepath
+
+def convert_tmx_to_xliff_if_needed(filepath):
+    """Convert TMX file back to XLIFF if it was originally an XLIFF file, otherwise return original path"""
+    if not os.path.exists(filepath):
+        return filepath
+    
+    # Check if file is TMX by extension
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext != '.tmx':
+        return filepath
+    
+    try:
+        # Try to check if TMX contains XLIFF version metadata
+        import PythonTmx
+        tmx = PythonTmx.Tmx(filepath)
+        
+        # Check header notes for original XLIFF version
+        xliff_version = None
+        for note in tmx.header.notes:
+            note_text = None
+            if hasattr(note, 'content') and note.content:
+                note_text = note.content
+            elif hasattr(note, 'text') and note.text:
+                note_text = note.text
+            
+            if note_text and 'Original XLIFF version' in note_text:
+                # Extract version from note text
+                version = note_text.split(':')[-1].strip()
+                if version in ['1.2', '2.0', '2.2']:
+                    xliff_version = version
+                    break
+        
+        # If we found XLIFF version metadata, convert back to XLIFF
+        if xliff_version:
+            logger.info(f"Converting TMX file back to XLIFF {xliff_version}: {filepath}")
+            # Generate output filename with .xlf extension
+            base_path = os.path.splitext(filepath)[0]
+            xliff_path = f"{base_path}.xlf"
+            tmx_to_xliff(filepath, xliff_path, xliff_version)
+            # Remove original TMX file after conversion
+            try:
+                os.remove(filepath)
+            except Exception as e:
+                logger.warning(f"Could not remove TMX file {filepath}: {e}")
+            return xliff_path
+    except Exception as e:
+        # If we can't determine or convert, just return original file
+        logger.debug(f"Could not convert TMX to XLIFF (file may not be from XLIFF): {e}")
+        pass
+    
+    return filepath
 
 @app.before_request
 def before_request():
@@ -320,8 +395,10 @@ def queue():
             for file in files:
                 filename = secure_filename(file.filename)
                 filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                file_list.append(filepath)
                 file.save(filepath)
+                # Convert XLIFF to TMX if needed
+                converted_path = convert_xliff_to_tmx_if_needed(filepath)
+                file_list.append(converted_path)
 
             for operation in operations:
                 result_list = None
@@ -346,19 +423,27 @@ def queue():
             with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
                     if operation in ('convert_vatv','clean_mt','merge_tmx'):
                         if type(result_list) == str:
-                            zf.write(result_list, os.path.basename(result_list))
+                            # Convert TMX back to XLIFF if it was originally XLIFF
+                            file_to_add = convert_tmx_to_xliff_if_needed(result_list)
+                            zf.write(file_to_add, os.path.basename(file_to_add))
                         else:
                             file_path = result_list[0]
-                            zf.write(file_path, os.path.basename(file_path))
+                            # Convert TMX back to XLIFF if it was originally XLIFF
+                            file_to_add = convert_tmx_to_xliff_if_needed(file_path)
+                            zf.write(file_to_add, os.path.basename(file_to_add))
                     else:
                         for result in result_list:
                             if len(result) > 2:
                                 if os.path.exists(result):
-                                    zf.write(result, os.path.basename(result))
+                                    # Convert TMX back to XLIFF if it was originally XLIFF
+                                    file_to_add = convert_tmx_to_xliff_if_needed(result)
+                                    zf.write(file_to_add, os.path.basename(file_to_add))
                             else:
                                 for tm in result:
                                     if os.path.exists(tm):
-                                        zf.write(tm, os.path.basename(tm))
+                                        # Convert TMX back to XLIFF if it was originally XLIFF
+                                        file_to_add = convert_tmx_to_xliff_if_needed(tm)
+                                        zf.write(file_to_add, os.path.basename(file_to_add))
 
 
 
@@ -436,8 +521,10 @@ def index():
             for file in files:
                 filename = secure_filename(file.filename)
                 filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                file_list.append(filepath)
                 file.save(filepath)
+                # Convert XLIFF to TMX if needed
+                converted_path = convert_xliff_to_tmx_if_needed(filepath)
+                file_list.append(converted_path)
             try:
                 result_list = None
                 if len(file_list) > 1:
@@ -476,19 +563,27 @@ def index():
                 with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
                     if operation in ('convert_vatv','clean_mt','merge_tmx'):
                         if type(result_list) == str:
-                            zf.write(result_list, os.path.basename(result_list))
+                            # Convert TMX back to XLIFF if it was originally XLIFF
+                            file_to_add = convert_tmx_to_xliff_if_needed(result_list)
+                            zf.write(file_to_add, os.path.basename(file_to_add))
                         else:
                             file_path = result_list[0]
-                            zf.write(file_path, os.path.basename(file_path))
+                            # Convert TMX back to XLIFF if it was originally XLIFF
+                            file_to_add = convert_tmx_to_xliff_if_needed(file_path)
+                            zf.write(file_to_add, os.path.basename(file_to_add))
                     else:
                         for result in result_list:
                             if len(result) > 2:
                                 if os.path.exists(result):
-                                    zf.write(result, os.path.basename(result))
+                                    # Convert TMX back to XLIFF if it was originally XLIFF
+                                    file_to_add = convert_tmx_to_xliff_if_needed(result)
+                                    zf.write(file_to_add, os.path.basename(file_to_add))
                             else:
                                 for tm in result:
                                     if os.path.exists(tm):
-                                        zf.write(tm, os.path.basename(tm))
+                                        # Convert TMX back to XLIFF if it was originally XLIFF
+                                        file_to_add = convert_tmx_to_xliff_if_needed(tm)
+                                        zf.write(file_to_add, os.path.basename(file_to_add))
 
                 memory_file.seek(0)
                 # Handle different result types
