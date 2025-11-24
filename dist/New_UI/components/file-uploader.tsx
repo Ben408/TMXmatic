@@ -32,7 +32,7 @@ export function FileUploader({ onFilesAdded }: FileUploaderProps) {
       const filesArray = Array.from(e.dataTransfer.files)
       const validFiles = filesArray.filter((file) => {
         const extension = file.name.split(".").pop()?.toLowerCase()
-        return ["tmx", "xlsx", "xls", "csv", "xliff", "xlf", "zip"].includes(extension || "")
+        return ["tbx", "tmx", "xlsx", "xls", "csv", "xliff", "xlf", "zip"].includes(extension || "")
       })
 
       if (validFiles.length > 0) {
@@ -46,7 +46,7 @@ export function FileUploader({ onFilesAdded }: FileUploaderProps) {
       const filesArray = Array.from(e.target.files)
       const validFiles = filesArray.filter((file) => {
         const extension = file.name.split(".").pop()?.toLowerCase()
-        return ["tmx", "xlsx", "xls", "csv", "xliff", "xlf", "zip"].includes(extension || "")
+        return ["tbx", "tmx", "xlsx", "xls", "csv", "xliff", "xlf", "zip"].includes(extension || "")
       })
 
       if (validFiles.length > 0) {
@@ -86,7 +86,7 @@ export function FileUploader({ onFilesAdded }: FileUploaderProps) {
             ref={fileInputRef}
             type="file"
             multiple
-            accept=".tmx,.xlsx,.xls,.csv,.xliff,.xlf,.zip"
+            accept=".tbx,.tmx,.xlsx,.xls,.csv,.xliff,.xlf,.zip"
             className="hidden"
             onChange={handleFileInputChange}
           />
