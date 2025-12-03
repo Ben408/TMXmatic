@@ -368,10 +368,17 @@ def merge_languages_from_discarded(unique_concept, discarded_concepts, ns):
                 added_languages.add(lang_code)
 
 
-def process_tbx(input_file, output_unique, output_remaining):
+def process_tbx(input_file):
     """Process TBX file and create two output files."""
     try:
         # Parse the input TBX file
+
+        input_path = Path(input_file)
+        output_dir = input_path.parent
+        output_unique = output_dir / f"clean_{input_path.name}"
+        output_remaining = output_dir / f"remaining_{input_path.name}"
+
+        
         tree = ET.parse(input_file)
         root = tree.getroot()
         
@@ -690,8 +697,8 @@ def process_tbx(input_file, output_unique, output_remaining):
         print(f"\nSuccessfully created:")
         print(f"  - Unique concepts: {output_unique}")
         print(f"  - Remaining concepts: {output_remaining}")
-        
-        return True
+
+        return (str(output_unique), str(output_remaining))
         
     except ET.ParseError as e:
         print(f"Error parsing XML file: {e}")
@@ -739,7 +746,7 @@ Examples:
         args.output_remaining = input_path.stem + '_remaining.tbx'
     
     # Process the file
-    success = process_tbx(args.input_file, args.output_unique, args.output_remaining)
+    success = process_tbx(args.input_file)
     
     if not success:
         sys.exit(1)

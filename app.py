@@ -82,6 +82,8 @@ try:
     # XLIFF operations
     from scripts.xliff_operations import leverage_tmx_into_xliff, check_empty_targets
     
+    # TBX operations
+    from scripts.tbx_cleaner import process_tbx
     logger.info("Successfully imported all script modules from current scripts directory")
     
 except ImportError as e:
@@ -201,7 +203,7 @@ def send_processed_files(files, base_filename, operation_name):
 
 def allowed_file(filename):
     """Check if file extension is allowed"""
-    ALLOWED_EXTENSIONS = {'tmx', 'csv', 'xlsx', 'xls', 'zip'}
+    ALLOWED_EXTENSIONS = {'tmx', 'csv', 'xlsx', 'xls', 'zip', 'tbx'}
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @app.before_request
@@ -269,7 +271,10 @@ OPERATIONS = {
     
     # Batch operations
     'batch_process_tms': handle_tmx_operation(batch_process_1_5),
-    'batch_process_mt': handle_tmx_operation(batch_process_1_5_9)
+    'batch_process_mt': handle_tmx_operation(batch_process_1_5_9),
+
+    # TBX operations
+    'process_tbx': handle_tmx_operation(process_tbx),
 }
 
 @app.route('/api/check-feature', methods=['GET'])
@@ -468,7 +473,7 @@ def index():
                         else:
                             result_list = process_file(operation, file_list[0])
                         
-
+                
                 
                 
 
@@ -481,6 +486,7 @@ def index():
                             file_path = result_list[0]
                             zf.write(file_path, os.path.basename(file_path))
                     else:
+                        print(result_list)
                         for result in result_list:
                             if len(result) > 2:
                                 if os.path.exists(result):
