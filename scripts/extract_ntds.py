@@ -195,7 +195,6 @@ def extract_non_true_duplicates(file_path: str) -> tuple[str, str]:
         
         logger.info(f"Processed {len(clean_segments)+ len(ntds_segments)} TUs: {len(clean_segments)} kept, {len(ntds_segments)} removed")
         
-        
         return str(clean_path), str(dups_path)
     except Exception as e:
         logger.error(f"Error processing file: {e}")
