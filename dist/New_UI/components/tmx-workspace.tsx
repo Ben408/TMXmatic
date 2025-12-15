@@ -132,6 +132,11 @@ export const OPERATIONS: Operation[] = [
     name: "Validate XLIFF",
     description: "Validate XLIFF files for errors and warnings."
   },
+  { 
+    id: "process_tbx", 
+    name: "Process TBX",
+    description: "Remove duplicate terms with less information."
+  },
 ]
 
 export function TMXWorkspace() {
@@ -678,6 +683,7 @@ export function TMXWorkspace() {
             onFileUpdate={handleFileUpdate}
             queuedOperations={queuedOperations}
             onQueueUpdate={setQueuedOperations}
+            onClearSelection={() => setSelectedFileIds([])}
           />
         )}
       </div>
