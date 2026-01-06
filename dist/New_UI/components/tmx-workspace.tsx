@@ -41,6 +41,12 @@ export type WorkspaceFile = {
     tmxFile?: string
     xliffFile?: string
   }
+  sourceProject?: {
+    integration: "blackbird" | "okapi"
+    projectId?: string
+    workspaceId?: string
+    fileId?: string
+  }
 }
 
 export type ProcessingOperation = {
@@ -151,7 +157,12 @@ export function TMXWorkspace() {
 
   const selectedFiles = files.filter(file => selectedFileIds.includes(file.id))
 
-  const handleFilesAdded = (newFiles: File[]) => {
+  const handleFilesAdded = (newFiles: File[], sourceProject?: {
+    integration: "blackbird" | "okapi"
+    projectId?: string
+    workspaceId?: string
+    fileId?: string
+  }) => {
     const workspaceFiles = newFiles.map((file) => ({
       id: crypto.randomUUID(),
       name: file.name,
@@ -162,6 +173,7 @@ export function TMXWorkspace() {
       status: "idle" as const,
       operations: [],
       relatedFiles: {},
+      sourceProject: sourceProject,
     }))
 
     setFiles((prev) => [...prev, ...workspaceFiles])
@@ -172,7 +184,7 @@ export function TMXWorkspace() {
 
     toast({
       title: "Files added",
-      description: `${newFiles.length} file(s) added to workspace`,
+      description: `${newFiles.length} file(s) added to workspace${sourceProject ? ` from ${sourceProject.integration}` : ''}`,
     })
   }
 
@@ -653,6 +665,97 @@ export function TMXWorkspace() {
     ))
   }
 
+  const handleUploadToProject = async (fileId: string) => {
+    const file = files.find((f) => f.id === fileId)
+    if (!file || !file.processedData || !file.sourceProject) {
+      toast({
+        title: "Error",
+        description: "File is not ready for upload or missing source project information",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      // Check if processedData is a ZIP file
+      const arrayBuffer = await file.processedData.arrayBuffer()
+      const uint8Array = new Uint8Array(arrayBuffer)
+      const isZipFile = uint8Array.length >= 4 && 
+                       uint8Array[0] === 0x50 && 
+                       uint8Array[1] === 0x4B && 
+                       uint8Array[2] === 0x03 && 
+                       uint8Array[3] === 0x04
+
+      let fileToUpload = file.processedData
+      let fileName = file.name
+
+      // If it's a ZIP file, we need to extract the "clean" file
+      if (isZipFile) {
+        const JSZip = (await import('jszip')).default
+        const zip = await JSZip.loadAsync(file.processedData)
+        const fileNames = Object.keys(zip.files)
+        
+        // Look for the clean file (usually has "clean" or "processed" in the name, or is the non-duplicate file)
+        // Priority: files with "clean" > files with "processed" > first file that's not a duplicate/garbage file
+        let cleanFileName = fileNames.find(name => 
+          name.toLowerCase().includes('clean') && !name.toLowerCase().includes('duplicate')
+        ) || fileNames.find(name => 
+          name.toLowerCase().includes('processed') && !name.toLowerCase().includes('duplicate')
+        ) || fileNames.find(name => 
+          !name.toLowerCase().includes('duplicate') && 
+          !name.toLowerCase().includes('garbage') &&
+          !name.toLowerCase().includes('old')
+        ) || fileNames[0]
+
+        if (cleanFileName) {
+          const cleanFile = zip.files[cleanFileName]
+          if (cleanFile && !cleanFile.dir) {
+            const cleanFileData = await cleanFile.async('blob')
+            fileToUpload = new File([cleanFileData], cleanFileName, { type: 'application/octet-stream' })
+            fileName = cleanFileName
+          }
+        }
+      }
+
+      const formData = new FormData()
+      formData.append('file', fileToUpload, fileName)
+      formData.append('integration', file.sourceProject.integration)
+      if (file.sourceProject.projectId) {
+        formData.append('project_id', file.sourceProject.projectId)
+      }
+      if (file.sourceProject.workspaceId) {
+        formData.append('workspace_id', file.sourceProject.workspaceId)
+      }
+      if (file.sourceProject.fileId) {
+        formData.append('original_file_id', file.sourceProject.fileId)
+      }
+
+      const response = await fetch('http://127.0.0.1:5000/api/upload-to-project', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to upload file to project')
+      }
+
+      const result = await response.json()
+      
+      toast({
+        title: "Success",
+        description: `File uploaded successfully to ${file.sourceProject.integration} project`,
+      })
+    } catch (error) {
+      console.error("Error uploading file to project:", error)
+      toast({
+        title: "Upload failed",
+        description: error instanceof Error ? error.message : "Failed to upload file to project",
+        variant: "destructive",
+      })
+    }
+  }
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2 space-y-6">
@@ -672,6 +775,7 @@ export function TMXWorkspace() {
           onSelectFile={handleFileSelect}
           onRemoveFile={handleFileRemove}
           onDownloadFile={handleDownloadFile}
+          onUploadToProject={handleUploadToProject}
         />
 
         {selectedFiles.length > 0 && (

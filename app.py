@@ -31,6 +31,12 @@ from scripts.batch_process import batch_process_1_5, batch_process_1_5_9
 from scripts.merge_tmx import merge_tmx_files
 from scripts.xliff_operations import leverage_tmx_into_xliff, check_empty_targets
 from scripts.clean_tmx_for_mt import clean_tmx_for_mt
+from scripts.integration_apis import (
+    IntegrationSettings, 
+    get_blackbird_client, 
+    get_okapi_client,
+    test_integration_connection
+)
 import json
 from dependency_manager import DependencyManager, DependencyCategories
 
@@ -765,6 +771,216 @@ def xliff_check():
     except Exception as e:
         logger.error(f"Error in xliff_check: {e}")
         return jsonify({'error': str(e)}), 400
+
+@app.route('/api/settings', methods=['GET', 'POST'])
+def settings():
+    """Handle settings retrieval and updates."""
+    try:
+        if request.method == 'GET':
+            # Return current settings
+            settings = IntegrationSettings.load_settings()
+            return jsonify(settings)
+        
+        elif request.method == 'POST':
+            # Update settings
+            data = request.get_json()
+            if not data:
+                return jsonify({'error': 'No data provided'}), 400
+            
+            # Validate and update settings
+            current_settings = IntegrationSettings.load_settings()
+            
+            if 'blackbird' in data:
+                current_settings['blackbird'].update(data['blackbird'])
+            
+            if 'okapi' in data:
+                current_settings['okapi'].update(data['okapi'])
+            
+            if IntegrationSettings.save_settings(current_settings):
+                return jsonify({'success': True, 'settings': current_settings})
+            else:
+                return jsonify({'error': 'Failed to save settings'}), 500
+                
+    except Exception as e:
+        logger.error(f"Error in settings endpoint: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/upload-to-project', methods=['POST'])
+def upload_to_project():
+    """Upload a processed file back to the source project."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        integration = request.form.get('integration')
+        if not integration:
+            return jsonify({'error': 'Integration name required'}), 400
+        
+        file = request.files['file']
+        project_id = request.form.get('project_id')
+        workspace_id = request.form.get('workspace_id')
+        original_file_id = request.form.get('original_file_id')
+        
+        # Save file temporarily
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        try:
+            if integration.lower() == 'blackbird':
+                if not project_id:
+                    return jsonify({'error': 'Project ID required for Blackbird'}), 400
+                
+                client = get_blackbird_client()
+                if not client:
+                    return jsonify({'error': 'Blackbird is not configured'}), 400
+                
+                # Upload file to Blackbird
+                success, result = client.upload_file(filepath)
+                if success:
+                    return jsonify({
+                        'success': True,
+                        'message': 'File uploaded successfully to Blackbird',
+                        'file_id': result.get('file_id') if isinstance(result, dict) else None
+                    })
+                else:
+                    error_msg = result.get('error', 'Upload failed') if isinstance(result, dict) else str(result)
+                    return jsonify({'error': error_msg}), 500
+            
+            elif integration.lower() == 'okapi':
+                if not workspace_id:
+                    return jsonify({'error': 'Workspace ID required for Okapi'}), 400
+                
+                client = get_okapi_client()
+                if not client:
+                    return jsonify({'error': 'Okapi is not configured'}), 400
+                
+                # Upload file to Okapi
+                success, result = client.upload_file(filepath, project_id=project_id if project_id else None)
+                if success:
+                    return jsonify({
+                        'success': True,
+                        'message': 'File uploaded successfully to Okapi',
+                        'file_id': result.get('file_id') if isinstance(result, dict) else None
+                    })
+                else:
+                    error_msg = result.get('error', 'Upload failed') if isinstance(result, dict) else str(result)
+                    return jsonify({'error': error_msg}), 500
+            
+            else:
+                return jsonify({'error': f'Unknown integration: {integration}'}), 400
+                
+        finally:
+            # Clean up temporary file
+            try:
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+            except Exception as e:
+                logger.warning(f"Could not remove temporary file {filepath}: {e}")
+                
+    except Exception as e:
+        logger.error(f"Error uploading file to project: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/pull-from-project', methods=['POST'])
+def pull_from_project():
+    """Pull files from a connected project."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        integration = data.get('integration')
+        if not integration:
+            return jsonify({'error': 'Integration name required'}), 400
+        
+        if integration.lower() == 'blackbird':
+            project_id = data.get('project_id')
+            if not project_id:
+                return jsonify({'error': 'Project ID required for Blackbird'}), 400
+            
+            client = get_blackbird_client()
+            if not client:
+                return jsonify({'error': 'Blackbird is not configured'}), 400
+            
+            # List files in project
+            success, result = client.list_files()
+            if success:
+                return jsonify({
+                    'success': True,
+                    'files': result.get('files', []) if isinstance(result, dict) else []
+                })
+            else:
+                error_msg = result.get('error', 'Failed to list files') if isinstance(result, dict) else str(result)
+                return jsonify({'error': error_msg}), 500
+        
+        elif integration.lower() == 'okapi':
+            workspace_id = data.get('workspace_id')
+            if not workspace_id:
+                return jsonify({'error': 'Workspace ID required for Okapi'}), 400
+            
+            client = get_okapi_client()
+            if not client:
+                return jsonify({'error': 'Okapi is not configured'}), 400
+            
+            # List files in workspace
+            success, result = client.list_files(project_id=data.get('project_id'))
+            if success:
+                return jsonify({
+                    'success': True,
+                    'files': result.get('files', []) if isinstance(result, dict) else []
+                })
+            else:
+                error_msg = result.get('error', 'Failed to list files') if isinstance(result, dict) else str(result)
+                return jsonify({'error': error_msg}), 500
+        
+        else:
+            return jsonify({'error': f'Unknown integration: {integration}'}), 400
+            
+    except Exception as e:
+        logger.error(f"Error pulling files from project: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/settings/test-connection', methods=['POST'])
+def test_connection():
+    """Test connection to an integration service."""
+    try:
+        data = request.get_json()
+        if not data or 'integration' not in data:
+            return jsonify({'error': 'Integration name required'}), 400
+        
+        integration = data['integration'].lower()
+        success, result = test_integration_connection(integration)
+        
+        # Build response with error details
+        response_data = {
+            'success': success,
+        }
+        
+        if success:
+            # Success case - result is a string message
+            response_data['message'] = result if isinstance(result, str) else "Connection successful"
+        else:
+            # Error case - result might be a dict with error details or a string
+            if isinstance(result, dict):
+                response_data['message'] = result.get('error', result.get('message', 'Connection failed'))
+                response_data['error'] = result.get('error', response_data['message'])
+                if 'status_code' in result:
+                    response_data['status_code'] = result['status_code']
+            else:
+                # result is a string
+                response_data['message'] = result or "Connection failed"
+                response_data['error'] = response_data['message']
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        logger.error(f"Error testing connection: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Failed to test connection',
+            'error': str(e)
+        }), 500
 
 def is_api_request():
     # Checks if the request expects JSON (AJAX/fetch) or is a form POST from the browser
