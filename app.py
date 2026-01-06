@@ -44,13 +44,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Import PythonTmx from the current environment (not hardcoded paths)
+# Import PythonTmx from the local scripts folder
 try:
+    # PythonTmx is in scripts/PythonTmx folder
     import PythonTmx
-    logger.info("Successfully imported PythonTmx from current environment")
+    logger.info("Successfully imported PythonTmx from local scripts folder")
 except ImportError as e:
     logger.critical(f"Failed to import PythonTmx: {e}")
-    logger.critical("Make sure PythonTmx is installed in the current virtual environment")
+    logger.critical(f"PythonTmx should be in {scripts_dir}/PythonTmx")
     raise
 
 # Import all script functions from the current scripts directory

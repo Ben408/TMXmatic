@@ -158,6 +158,28 @@ OPTIONAL_LIBRARIES = [
 
 def is_library_installed(library_name):
     """Check if a Python library is installed and can be imported"""
+    # Special handling for PythonTmx - it's now local in scripts/PythonTmx
+    if library_name == "PythonTmx":
+        app_path = get_application_path()
+        python_tmx_path = os.path.join(app_path, 'scripts', 'PythonTmx')
+        if os.path.exists(python_tmx_path) and os.path.isdir(python_tmx_path):
+            # Add scripts directory to path if not already there
+            scripts_dir = os.path.join(app_path, 'scripts')
+            if scripts_dir not in sys.path:
+                sys.path.insert(0, scripts_dir)
+            try:
+                # Try to import PythonTmx from local folder
+                __import__(library_name)
+                logging.info(f"PythonTmx found in local scripts folder")
+                return True
+            except ImportError as e:
+                logging.warning(f"PythonTmx found in scripts folder but failed to import: {e}")
+                return False
+        else:
+            logging.warning(f"PythonTmx not found in {python_tmx_path}")
+            return False
+    
+    # For other libraries, check normally
     try:
         importlib.util.find_spec(library_name)
         # Try to actually import the library to ensure it works
@@ -167,16 +189,17 @@ def is_library_installed(library_name):
         return False
     except Exception as e:
         logging.warning(f"Library {library_name} found but failed to import: {e}")
-        # Try to reinstall the library if it's corrupted
-        logging.info(f"Attempting to reinstall corrupted library: {library_name}")
-        if install_python_library(library_name):
-            try:
-                __import__(library_name)
-                logging.info(f"Successfully reinstalled and imported {library_name}")
-                return True
-            except Exception as e2:
-                logging.error(f"Failed to import {library_name} after reinstall: {e2}")
-                return False
+        # Try to reinstall the library if it's corrupted (but not for PythonTmx)
+        if library_name != "PythonTmx":
+            logging.info(f"Attempting to reinstall corrupted library: {library_name}")
+            if install_python_library(library_name):
+                try:
+                    __import__(library_name)
+                    logging.info(f"Successfully reinstalled and imported {library_name}")
+                    return True
+                except Exception as e2:
+                    logging.error(f"Failed to import {library_name} after reinstall: {e2}")
+                    return False
         return False
 
 def install_python_library(library_name):
@@ -308,6 +331,10 @@ def ensure_python_libraries():
     if missing_libraries:
         logging.info(f"Installing {len(missing_libraries)} missing libraries...")
         for library in missing_libraries:
+            # Don't try to install PythonTmx via pip - it's local
+            if library == "PythonTmx":
+                logging.error(f"PythonTmx is missing from scripts/PythonTmx folder. Please ensure it exists.")
+                return False
             if not install_python_library(library):
                 logging.error(f"Failed to install {library}. Please install manually: pip install {library}")
                 return False

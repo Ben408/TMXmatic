@@ -2,11 +2,8 @@ import sys
 import os
 import lxml.etree as etree
 
-# Add the parent directory of PythonTmx to the path
-tmx_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'tmx', 'Lib', 'site-packages')
-if tmx_path not in sys.path:
-    sys.path.insert(0, tmx_path)
-
+# PythonTmx is in the same directory (scripts/PythonTmx)
+# The scripts directory should already be in sys.path from app.py
 import PythonTmx
 from datetime import datetime
 from pathlib import Path
