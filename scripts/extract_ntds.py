@@ -115,9 +115,9 @@ def extract_non_true_duplicates(file_path: str) -> tuple[str, str]:
                 for tuv_elem in tu_elem.findall('tuv'):
                     lang = tuv_elem.get('{http://www.w3.org/XML/1998/namespace}lang', 'en')
                     seg_elem = tuv_elem.find('seg')
-                    if seg_elem is not None and seg_elem.text:
-                        tuv = PythonTmx.Tuv(lang=lang)
-                        tuv.content = seg_elem.text
+                    if seg_elem is not None:
+                        # Use PythonTmx's from_element to properly parse inline content
+                        tuv = PythonTmx.from_element(tuv_elem)
                         tu.tuvs.append(tuv)
                 if len(tu.tuvs) >= 2:  # Only add TUs with both source and target
                     tus.append(tu)
