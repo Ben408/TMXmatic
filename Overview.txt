@@ -1,0 +1,21 @@
+A prototype for LLM Translation with quality assurance.
+
+Step 1:
+An XLIFF file is submitted for processing
+
+Step 2:
+The XLIFF file is processed locally using the Google Translation LLM
+https://huggingface.co/google/translategemma-12b-it/tree/main
+
+Step 3:
+Results from the LLM are checked using UQLM
+https://github.com/cvs-health/uqlm?tab=readme-ov-file
+
+Step 4:
+Translation Quality is evaluated for accuracy, fluency and correct Tone of Voice.
+
+Step 5:
+The XLIFF file target TU is updated with the best result from the LLM + QA process
+The metadata inside the TU is modified with the translated by LLM as well as the quality information.
+
+

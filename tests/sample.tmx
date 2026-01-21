@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tmx version="1.4">
+  <body>
+    <tu>
+      <tuv xml:lang="en">
+        <seg>Hello, please translate the product name 'BlueWidget' using existing termbase if available.</seg>
+      </tuv>
+      <tuv xml:lang="de">
+        <seg>Hallo, bitte übersetzen Sie den Produktnamen 'BlueWidget' mit vorhandener Terminologie.</seg>
+      </tuv>
+    </tu>
+  </body>
+</tmx>
