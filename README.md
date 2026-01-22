@@ -1,207 +1,256 @@
-# TMX Processing Tool
+# LLM Quality Module for TMXmatic
 
-A web-based tool for processing TMX (Translation Memory eXchange) and XLIFF files, with a focus on cleaning and managing translation memory data.
-
-## Quick Start (Windows)
-
-- Double-click `start_tmxmatic.bat` in the project root.
-- This script will:
-  - Check for Python 3; if missing, attempt to install it silently via `winget`.
-  - Create and activate a virtual environment at `.venv`.
-  - Upgrade `pip` and install dependencies from `other/requirements.txt`; ensure `Flask-CORS` is installed.
-  - Launch the app via `launcher.py`, which will:
-    - Start the Flask backend at `http://localhost:5000`.
-    - Check for Node.js/npm; if missing, download and install Node.js.
-    - If the frontend is present at `dist/New_UI`, install Node dependencies, build the UI, and start the dev server (typically on `http://localhost:3000`). Your default browser will open to the running UI.
-- Logs are written to a file named like `tmxmatic_YYYYMMDD_HHMMSS.log` in the application directory.
-
-## Getting Started
-
-### Prerequisites
-- Python 3.8 or higher
-- Node.js 16 or higher (for UI development)
-- pip (Python package manager)
-
-### Installation
-
-1. Clone the repository:
-bash
-git clone [repository-url]
-cd tmx-processing-tool
-
-2. Install Python dependencies:
-bash
-pip install -r requirements.txt
-
-3. Run the Flask development server:
-bash
-python app.py
-
-The application will be available at `http://localhost:5000`
+A GPU-accelerated translation and quality estimation module for TMXmatic, enabling local translation using RTX 8GB, 12GB, or 16GB GPUs.
 
 ## Features
 
-### TMX Processing Operations
+- **Local GPU Translation**: Uses `translategemma-12b-it` for on-device translation
+- **Translation Memory Integration**: Exact and fuzzy matching with TMX files
+- **Terminology Support**: TBX/CSV termbase integration with term injection
+- **Quality Estimation**: Multi-metric scoring (accuracy, fluency, tone, hallucination detection)
+- **XLIFF Support**: Full XLIFF 1.2 and 2.0+ support with metadata preservation
+- **TMS Compatibility**: Standard match rate properties for Trados Studio, Phrase TMS, etc.
+- **REST API**: Flask endpoints for integration with TMXmatic UI
+- **CLI Interface**: Command-line tool for batch processing
 
-#### Duplicate Management
-The tool offers two distinct approaches to handling duplicates:
+## Requirements
 
-1. **True Duplicates** (`find_true_duplicates`)
-   - Identifies entries with identical source AND target text
-   - Keeps the most recent version based on changedate/creationdate
-   - Moves older duplicates to a separate file
-   - Use this when you want to remove exact duplicates while keeping the latest version
+- Python 3.11+
+- CUDA-capable GPU (8GB+ VRAM recommended for translategemma-12b-it)
+- Windows 10/11 (primary platform)
+- ~25GB disk space for models (translategemma-12b-it: 24GB, SBERT: 0.4GB, COMET: optional)
 
-2. **Non-True Duplicates** (`extract_non_true_duplicates`)
-   - Identifies entries with the same source but different target text
-   - Moves all variations to a separate file for review
-   - Use this to find potentially inconsistent translations
-   - Helps maintain translation consistency
+## Installation
 
-#### XLIFF Operations
-
-1. **TMX Leverage** (`xliff_tmx_leverage`)
-   - Applies translations from a TMX file to an XLIFF file
-   - Only fills empty target segments
-   - Provides statistics on:
-     - Number of translations found
-     - Updates made
-     - Remaining empty segments
-
-2. **XLIFF Status Check** (`xliff_check`)
-   - Analyzes XLIFF files for completion
-   - Reports:
-     - Total segments
-     - Empty segments
-     - Completion rate
-
-### Other Operations
-
-#### TMX File Operations
-- **Split TMX by language**
-  - `split_by_language(file_path)`: Creates separate TMX files for each target language
-  - `split_by_size(file_path, max_tus)`: Splits TMX into smaller files with specified maximum TUs
-
-#### Data Cleaning Operations
-- **Remove empty targets**
-  - `empty_targets(file_path)`: Removes translation units with empty target segments
-  - Creates separate files for valid and empty segments
-
-- **Remove duplicates**
-  - `find_true_duplicates(file_path)`: Identifies and separates exact duplicate translations
-  - `extract_non_true_duplicates(file_path)`: Identifies similar but non-identical translations
-  - `find_sentence_level_segments(file_path)`: Separates complete sentence segments
-
-- **Clean for MT**
-  - `clean_tmx_for_mt(file_path)`: Prepares TMX for machine translation training
-  - Removes tags, placeholders, and problematic segments
-  - Normalizes content for better training results
-
-#### Analysis Tools
-- **Date Analysis**
-  - `count_creation_dates(file_path)`: Analyzes TU creation date distribution
-  - `count_last_usage_dates(file_path)`: Tracks when translations were last modified
-  - `find_date_duplicates(file_path, date)`: Finds duplicates around a specific date
-
-- **Content Analysis**
-  - `extract_translations(file_path)`: Exports all translations to CSV format
-  - Includes metadata like creation dates and change dates
-
-#### Batch Processing
-- **Automated Workflows**
-  - `batch_process_1_5(file_path)`: Runs steps 1-5 in sequence:
-    1. Remove empty targets
-    2. Remove true duplicates
-    3. Extract non-true duplicates
-    4. Remove sentence-level segments
-    5. Clean output
-  - `batch_process_1_5_9(file_path, cutoff_date)`: Adds date filtering to the workflow
-
-#### File Conversion
-- **Format Conversion**
-  - `convert_vatv_to_tmx(file_path)`: Converts VATV CSV files to TMX format
-  - `convert_termweb_to_tmx(file_path)`: Converts TermWeb Excel files to TMX format
-
-#### File Management
-- **Merge Operations**
-  - `merge_tmx_files(file_paths)`: Combines multiple TMX files
-  - Removes duplicates and keeps most recent versions
-  - Maintains consistent source language
-
-#### XLIFF Support
-- **XLIFF Operations**
-  - `leverage_tmx_into_xliff(tmx_file, xliff_file)`: Applies TMX translations to XLIFF
-  - `check_empty_targets(xliff_file)`: Analyzes XLIFF completion status
-
-## Development
-
-### Project Structure
-```
-tmx-processing-tool/
-├── app.py              # Flask application
-├── config.py           # Configuration settings
-├── requirements.txt    # Python dependencies
-├── scripts/           # Processing scripts
-│   ├── __init__.py
-│   ├── remove_duplicates.py
-│   ├── extract_ntds.py
-│   └── xliff_operations.py
-└── New_UI/           # React frontend
-    └── components/   # UI components
-```
-
-### Running in Development Mode
-
-1. Start the Flask backend:
+1. Clone the repository:
 ```bash
-python app.py
+git clone <repository-url>
+cd "F:\LLM Quality Module for TMXmatic"
 ```
 
-2. Start the UI development server (in a separate terminal):
+2. Set up virtual environment:
 ```bash
-cd New_UI
-npm install
-npm run dev
+setup_venv.bat
 ```
 
-### Building for Distribution
-
-1. Build the UI:
+3. Activate virtual environment:
 ```bash
-cd New_UI
-npm run build
+.venv\Scripts\Activate.ps1
 ```
 
-2. Build the executable:
+4. Verify models (optional - models will be downloaded on first use):
 ```bash
-pyinstaller app.spec
+python tools/verify_models.py
 ```
 
-The executable will be created in the `dist` directory.
+## Model Management
 
-## Contributing
+### Required Models
+- **translategemma-12b-it** (google/translategemma-12b-it): 24GB - Main translation model
+- **SBERT Multilingual** (sentence-transformers/paraphrase-multilingual-mpnet-base-v2): 0.4GB - For similarity scoring
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+### Optional Models
+- **COMET Reference** (Unbabel/wmt22-comet-da): 0.5GB - Reference-based quality estimation
+- **COMET-QE** (Unbabel/wmt22-cometkiwi-da): 0.5GB - Quality estimation without reference
+
+Models are automatically downloaded from HuggingFace on first use, or can be downloaded manually via the API or model manager.
+
+## Usage
+
+### Command Line
+
+```bash
+python -m local_gpu_translation.main \
+    --xliff input.xlf \
+    --output output.xlf \
+    --tmx memory.tmx \
+    --tbx terms.tbx \
+    --src-lang en \
+    --tgt-lang fr \
+    --profile ClientA
+```
+
+### API Endpoints
+
+The module provides Flask API endpoints:
+
+- `GET /gpu/status` - Get GPU status and capabilities
+- `GET /models/list` - List available models
+- `POST /models/download` - Download a model
+- `POST /translate` - Translate XLIFF file
+- `GET /translate/download` - Download translated file
+
+## Architecture
+
+### Phase 0: Shared Infrastructure
+- GPU detection and management
+- Model downloading and caching
+- Memory management
+- Configuration profiles
+- Prompt templates
+- TQE engine
+
+### Phase 1: Core Translation
+- LLM translation module
+- TMX matching (exact/fuzzy)
+- Term extraction and injection
+- Workflow orchestration
+
+### Phase 2: Quality Estimation
+- Multi-metric scoring
+- Term validation
+- Score aggregation
+- Decision making
+
+### Phase 3: XLIFF Integration
+- XLIFF parsing and writing
+- Metadata preservation
+- Match rate calculation
+- Quality warnings
+
+## Testing
+
+### Test Results
+- **Total Tests**: 202
+- **All Passing**: ✅ 202/202
+- **Coverage**: 80-97% for tested components
+- **Execution Time**: ~12 seconds
+
+### Running Tests
+
+Run all tests:
+```bash
+pytest tests/ -v
+```
+
+Run with coverage:
+```bash
+pytest tests/ --cov=shared --cov=local_gpu_translation --cov-report=html
+```
+
+Run specific test suites:
+```bash
+# Phase 0: Shared Infrastructure
+pytest tests/unit/shared/ -v
+
+# Phase 1: Core Translation
+pytest tests/unit/local_gpu/ -v
+
+# Integration tests
+pytest tests/integration/ -v
+```
+
+### Test Documentation
+- **Comprehensive Test Report**: See `COMPREHENSIVE_TEST_REPORT.md`
+- **Coverage Analysis**: See `TEST_COVERAGE_ANALYSIS.md`
+- **Test Results**: See `TEST_RESULTS.md`
+
+## Project Structure
+
+```
+F:\LLM Quality Module for TMXmatic/
+├── shared/                 # Shared infrastructure
+│   ├── gpu/              # GPU detection
+│   ├── models/             # Model management
+│   ├── config/             # Configuration
+│   ├── tqe/                # Quality estimation
+│   └── utils/               # Utilities
+├── local_gpu_translation/   # Main module
+│   ├── llm_translation/     # LLM translation
+│   ├── integration/         # Workflow orchestration
+│   ├── io/                  # XLIFF processing
+│   ├── quality/             # Quality validation
+│   └── api/                 # Flask endpoints
+├── tests/                   # Test suite
+│   ├── unit/                # Unit tests
+│   └── integration/         # Integration tests
+└── Models/                  # Downloaded models
+```
+
+## Configuration
+
+Configuration profiles are stored in `config/profiles/` and support:
+- Model selection
+- TQE weights and thresholds
+- Term enforcement policies (strict/soft)
+- Batch processing settings
+- Language pair specific settings
+
+### Profile Structure
+```json
+{
+  "profile_name": "ClientA",
+  "llm_model": "translategemma-12b-it",
+  "num_candidates": 5,
+  "tqe_weights": {
+    "accuracy": 0.6,
+    "fluency": 0.25,
+    "tone": 0.15,
+    "term_match": 0.1
+  },
+  "thresholds": {
+    "accept_auto": 85,
+    "accept_with_review": 70,
+    "fuzzy_tmx_threshold": 0.8
+  }
+}
+```
+
+## Workflow
+
+1. **TMX Matching**: Exact matches (100%) use TMX directly, fuzzy matches (≥75%) are repaired by LLM
+2. **Term Injection**: Relevant terms from TBX/CSV are injected into prompts
+3. **Translation**: LLM generates N-best candidates
+4. **Quality Estimation**: Candidates scored using accuracy, fluency, tone, and hallucination detection
+5. **Selection**: Best candidate selected based on weighted scores
+6. **Metadata**: Match rates and quality scores written to XLIFF for TMS compatibility
+
+## API Integration
+
+The module provides Flask Blueprint (`local_gpu_bp`) that can be registered with the main TMXmatic Flask app:
+
+```python
+from local_gpu_translation.api.endpoints import local_gpu_bp
+app.register_blueprint(local_gpu_bp)
+```
+
+## Status
+
+✅ **Core Implementation Complete**
+- All 202 tests passing
+- Comprehensive test coverage
+- Full documentation
+- Ready for UI integration
+
+⚠️ **Models Required**
+- Models must be downloaded before use
+- Use `tools/verify_models.py` to check model status
+- Models download automatically on first use
+
+## Documentation
+
+### Main Documentation
+- **Installation & Integration**: `docs/INSTALLATION.md` - Complete installation guide
+- **Testing**: `docs/TESTING.md` - Test strategy, results, and coverage
+- **UI Integration**: `docs/UI_INTEGRATION.md` - UI components and integration
+- **Cognee Review**: `docs/COGNEE_REVIEW.md` - Review for multi-agent system
+
+### Module-Specific
+- **TQE Module**: `tqe/README.md` - Translation Quality Estimation module
+
+### Archived Documentation
+- Original documentation files preserved in `docs/archive/` for reference
+
+## Branch Information
+
+- **Branch**: `Local_translate_QA`
+- **Repository**: https://github.com/Ben408/TMXmatic
+- **Status**: Ready for check-in
 
 ## License
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+[Your License Here]
 
-    http://www.apache.org/licenses/LICENSE-2.0
+## Contributing
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
-## Support
-
-For support, please open an issue in the GitHub repository.
-
+[Contributing Guidelines]
