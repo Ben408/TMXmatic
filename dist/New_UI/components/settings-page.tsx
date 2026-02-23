@@ -154,7 +154,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
 
     // Validate required fields
     if (integration === 'blackbird') {
-      if (!blackbirdApiKey || !blackbirdApiUrl || !blackbirdProjectId) {
+      if (!blackbirdApiKey || !blackbirdApiUrl ) {
         setConnectionResult({
           success: false,
           message: "Some fields are missing, please fill them in.",
