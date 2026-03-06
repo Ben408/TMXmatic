@@ -11,6 +11,7 @@ from werkzeug.utils import secure_filename
 import secrets
 from pathlib import Path
 import shutil
+import tempfile
 
 # CRITICAL: Make Flask completely self-contained and path-independent
 # Get the directory where THIS Flask app is running
@@ -941,6 +942,64 @@ def pull_from_project():
         logger.error(f"Error pulling files from project: {e}")
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/api/download-from-project', methods=['POST'])
+def download_from_project():
+    """Download a single file from a connected project (Okapi/Blackbird) to stream to the client."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        integration = data.get('integration')
+        file_id = data.get('file_id')
+        file_name = data.get('file_name') or 'download'
+        if not integration or not file_id:
+            return jsonify({'error': 'integration and file_id required'}), 400
+        file_name = secure_filename(file_name) or 'download'
+
+        if integration.lower() == 'blackbird':
+            project_id = data.get('project_id')
+            if not project_id:
+                return jsonify({'error': 'project_id required for Blackbird'}), 400
+            client = get_blackbird_client()
+            if not client:
+                return jsonify({'error': 'Blackbird is not configured'}), 400
+        elif integration.lower() == 'okapi':
+            workspace_id = data.get('workspace_id')
+            if not workspace_id:
+                return jsonify({'error': 'workspace_id required for Okapi'}), 400
+            client = get_okapi_client()
+            if not client:
+                return jsonify({'error': 'Okapi is not configured'}), 400
+        else:
+            return jsonify({'error': f'Unknown integration: {integration}'}), 400
+
+        fd, temp_path = tempfile.mkstemp(suffix=os.path.splitext(file_name)[1] or '')
+        try:
+            os.close(fd)
+            success, err = client.download_file(file_id, temp_path)
+            if not success:
+                return jsonify({'error': err or 'Download failed'}), 500
+            with open(temp_path, 'rb') as f:
+                data = f.read()
+            return send_file(
+                io.BytesIO(data),
+                as_attachment=True,
+                download_name=file_name,
+                mimetype='application/octet-stream',
+            )
+        finally:
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except Exception as e:
+                    logger.warning(f"Could not remove temp file {temp_path}: {e}")
+
+    except Exception as e:
+        logger.error(f"Error downloading from project: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/settings/test-connection', methods=['POST'])
 def test_connection():
     """Test connection to an integration service."""
@@ -950,7 +1009,13 @@ def test_connection():
             return jsonify({'error': 'Integration name required'}), 400
         
         integration = data['integration'].lower()
-        success, result = test_integration_connection(integration)
+        # Use credentials from request body if provided (e.g. current form values)
+        override_settings = {}
+        if 'blackbird' in data:
+            override_settings['blackbird'] = data['blackbird']
+        if 'okapi' in data:
+            override_settings['okapi'] = data['okapi']
+        success, result = test_integration_connection(integration, override_settings=override_settings or None)
         
         # Build response with error details
         response_data = {

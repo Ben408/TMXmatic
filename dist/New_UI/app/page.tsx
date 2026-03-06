@@ -1,13 +1,20 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import { TMXWorkspace } from "@/components/tmx-workspace"
 import { SettingsPage } from "@/components/settings-page"
 import { Button } from "@/components/ui/button"
 import { Settings } from "lucide-react"
+import { IntegrationSettingsProvider, useIntegrationSettings } from "@/components/integration-settings-context"
 
-export default function Home() {
+function HomeContent() {
   const [showSettings, setShowSettings] = useState(false)
+  const { refresh: refreshIntegrationSettings } = useIntegrationSettings()
+
+  const handleCloseSettings = useCallback(() => {
+    setShowSettings(false)
+    refreshIntegrationSettings()
+  }, [refreshIntegrationSettings])
 
   return (
     <main className="container mx-auto py-6 px-4 md:px-6 min-h-screen">
@@ -30,11 +37,19 @@ export default function Home() {
         )}
       </div>
       {showSettings ? (
-        <SettingsPage onBack={() => setShowSettings(false)} />
+        <SettingsPage onBack={handleCloseSettings} />
       ) : (
         <TMXWorkspace />
       )}
     </main>
+  )
+}
+
+export default function Home() {
+  return (
+    <IntegrationSettingsProvider>
+      <HomeContent />
+    </IntegrationSettingsProvider>
   )
 }
 

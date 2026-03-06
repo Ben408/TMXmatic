@@ -1,0 +1,17 @@
+{
+  "blackbird": {
+    "enabled": false,
+    "api_key": "",
+    "api_url": "",
+    "project_id": ""
+  },
+  "okapi": {
+    "enabled": true,
+    "api_key": "",
+    "api_url": "",
+    "workspace_id": "",
+    "ci_commands": [
+      "tikal.sh -v"
+    ]
+  }
+}

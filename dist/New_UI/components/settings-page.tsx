@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Loader2, CheckCircle2, XCircle, Wifi, X } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -40,6 +41,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
   const [okapiApiKey, setOkapiApiKey] = useState("")
   const [okapiApiUrl, setOkapiApiUrl] = useState("")
   const [okapiWorkspaceId, setOkapiWorkspaceId] = useState("")
+  const [okapiCiCommands, setOkapiCiCommands] = useState<string[]>([])
 
   // Loading and connection test states
   const [loading, setLoading] = useState(false)
@@ -58,7 +60,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
   const loadSettings = async () => {
     try {
       setLoading(true)
-      const response = await fetch('http://127.0.0.1:5000/api/settings')
+      const response = await fetch('http://127.0.0.1:5000/api/settings', { cache: 'no-store' })
       if (response.ok) {
         const data = await response.json()
         
@@ -76,6 +78,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
           setOkapiApiKey(data.okapi.api_key || "")
           setOkapiApiUrl(data.okapi.api_url || "")
           setOkapiWorkspaceId(data.okapi.workspace_id || "")
+          setOkapiCiCommands(Array.isArray(data.okapi.ci_commands) ? data.okapi.ci_commands : [])
         }
       }
     } catch (error) {
@@ -110,6 +113,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
             api_key: okapiApiKey,
             api_url: okapiApiUrl,
             workspace_id: okapiWorkspaceId,
+            ci_commands: okapiCiCommands,
           },
         }),
       })
@@ -149,6 +153,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
         api_key: okapiApiKey,
         api_url: okapiApiUrl,
         workspace_id: okapiWorkspaceId,
+        ci_commands: okapiCiCommands,
       },
     }
 
@@ -191,13 +196,17 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
         body: JSON.stringify(tempSettings),
       })
 
-      // Test connection
+      // Test connection using current form values so backend doesn't rely on saved files
       const response = await fetch('http://127.0.0.1:5000/api/settings/test-connection', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ integration }),
+        body: JSON.stringify({
+          integration,
+          blackbird: tempSettings.blackbird,
+          okapi: tempSettings.okapi,
+        }),
       })
 
       const data = await response.json()
@@ -367,6 +376,65 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
                 onChange={(e) => setOkapiWorkspaceId(e.target.value)}
                 disabled={!okapiEnabled}
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Okapi CI commands</Label>
+              <p className="text-sm text-muted-foreground">
+                Select which Okapi/Tikal commands should run in CI when the Okapi connector is used.
+              </p>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="okapi-ci-version"
+                    checked={okapiCiCommands.includes("tikal.sh -v")}
+                    onCheckedChange={(checked) => {
+                      setOkapiCiCommands((prev) =>
+                        checked
+                          ? [...prev, "tikal.sh -v"]
+                          : prev.filter((cmd) => cmd !== "tikal.sh -v")
+                      )
+                    }}
+                    disabled={!okapiEnabled}
+                  />
+                  <Label htmlFor="okapi-ci-version" className="text-sm">
+                    Run <code>tikal.sh -v</code> (Okapi version)
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="okapi-ci-lu"
+                    checked={okapiCiCommands.includes("tikal.sh -lu")}
+                    onCheckedChange={(checked) => {
+                      setOkapiCiCommands((prev) =>
+                        checked
+                          ? [...prev, "tikal.sh -lu"]
+                          : prev.filter((cmd) => cmd !== "tikal.sh -lu")
+                      )
+                    }}
+                    disabled={!okapiEnabled}
+                  />
+                  <Label htmlFor="okapi-ci-lu" className="text-sm">
+                    Run <code>tikal.sh -lu</code> (list utilities)
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="okapi-ci-lf"
+                    checked={okapiCiCommands.includes("tikal.sh -lf")}
+                    onCheckedChange={(checked) => {
+                      setOkapiCiCommands((prev) =>
+                        checked
+                          ? [...prev, "tikal.sh -lf"]
+                          : prev.filter((cmd) => cmd !== "tikal.sh -lf")
+                      )
+                    }}
+                    disabled={!okapiEnabled}
+                  />
+                  <Label htmlFor="okapi-ci-lf" className="text-sm">
+                    Run <code>tikal.sh -lf</code> (list filters)
+                  </Label>
+                </div>
+              </div>
             </div>
             <Button
               variant="outline"

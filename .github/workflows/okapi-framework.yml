@@ -1,0 +1,56 @@
+name: Okapi Framework setup
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  okapi-framework:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+
+      - name: Setup Okapi Framework
+        uses: jimmymcpeter/setup-okapi-framework@v1
+        with:
+          # Pin to a known Okapi release; update as needed
+          version: '1.47.0'
+
+      - name: Verify Okapi installation
+        run: |
+          # Show Okapi tools available (tikal, rainbow, etc.)
+          tikal.sh -h || tikal.bat -h || true
+
+      # Run Okapi CI commands from integration_settings.json (Settings → Okapi → Okapi CI commands).
+      # Commit integration_settings.json so the workflow can read okapi.ci_commands.
+      - name: Run Okapi CI commands
+        run: |
+          if [ ! -f integration_settings.json ]; then
+            echo "No integration_settings.json in repo; skipping Okapi CI commands."
+            echo "Commit integration_settings.json (with okapi.ci_commands) to run commands in CI."
+            exit 0
+          fi
+          COMMANDS=$(jq -r '.okapi.ci_commands[]? // empty' integration_settings.json)
+          if [ -z "$COMMANDS" ]; then
+            echo "No okapi.ci_commands in integration_settings.json; skipping."
+            exit 0
+          fi
+          echo "Running Okapi CI commands from integration_settings.json..."
+          while IFS= read -r cmd; do
+            [ -z "$cmd" ] && continue
+            echo "--- Running: $cmd ---"
+            $cmd || true
+            echo ""
+          done <<< "$COMMANDS"
+

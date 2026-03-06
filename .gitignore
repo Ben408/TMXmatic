@@ -1,0 +1,5 @@
+integration_secrets.json
+*.log
+mock_okapi.py
+test.tmx
+**/__pycache__

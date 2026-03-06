@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react"
 import type { WorkspaceFile } from "./tmx-workspace"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Download, Trash2, CheckCircle, Clock, AlertCircle, FileIcon, Upload } from "lucide-react"
+import { Download, Trash2, CheckCircle, Clock, AlertCircle, FileIcon } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 
 export interface WorkspaceFilesProps {
@@ -13,7 +13,6 @@ export interface WorkspaceFilesProps {
   onSelectFile: (fileId: string, multiSelect?: boolean) => void
   onRemoveFile: (id: string) => void
   onDownloadFile: (fileId: string) => Promise<void>
-  onUploadToProject?: (fileId: string) => Promise<void>
 }
 
 export function WorkspaceFiles({
@@ -22,7 +21,6 @@ export function WorkspaceFiles({
   onSelectFile,
   onRemoveFile,
   onDownloadFile,
-  onUploadToProject,
 }: WorkspaceFilesProps) {
   const [height, setHeight] = useState(250)
   const [isResizing, setIsResizing] = useState(false)
@@ -98,19 +96,6 @@ export function WorkspaceFiles({
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    {file.processedData && file.sourceProject && onUploadToProject && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={async (e) => {
-                          e.stopPropagation()
-                          await onUploadToProject(file.id)
-                        }}
-                        title="Upload to project"
-                      >
-                        <Upload className="h-4 w-4" />
-                      </Button>
-                    )}
                     {file.processedData && (
                       <Button
                         variant="ghost"

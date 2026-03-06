@@ -15,63 +15,131 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-# Settings file path
-SETTINGS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'integration_settings.json')
+# Settings file paths
+PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
+# Non-sensitive settings that are safe to commit (e.g. enabled flags, CI commands)
+SETTINGS_FILE = os.path.join(PROJECT_ROOT, 'integration_settings.json')
+# Sensitive settings (API keys, URLs, project/workspace IDs) – should be gitignored
+SECRETS_FILE = os.path.join(PROJECT_ROOT, 'integration_secrets.json')
 
 
 class IntegrationSettings:
     """Manages integration settings storage and retrieval."""
     
     @staticmethod
-    def load_settings() -> Dict[str, Any]:
-        """Load integration settings from file."""
-        try:
-            if os.path.exists(SETTINGS_FILE):
-                with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            return {
-                'blackbird': {
-                    'enabled': False,
-                    'api_key': '',
-                    'api_url': '',
-                    'project_id': ''
-                },
-                'okapi': {
-                    'enabled': False,
-                    'api_key': '',
-                    'api_url': '',
-                    'workspace_id': ''
-                }
+    def _default_settings() -> Dict[str, Any]:
+        """Base settings structure with defaults for all keys."""
+        return {
+            'blackbird': {
+                'enabled': False,
+                'api_key': '',
+                'api_url': '',
+                'project_id': ''
+            },
+            'okapi': {
+                'enabled': False,
+                'api_key': '',
+                'api_url': '',
+                'workspace_id': '',
+                # List of Okapi CI commands (e.g., tikal.sh -v, tikal.sh -lu)
+                'ci_commands': []
             }
+        }
+    
+    @staticmethod
+    def load_settings() -> Dict[str, Any]:
+        """
+        Load integration settings from the public and secrets files.
+        
+        Public file:  integration_settings.json   (non-sensitive)
+        Secrets file: integration_secrets.json    (API keys, URLs, IDs)
+        """
+        try:
+            settings = IntegrationSettings._default_settings()
+
+            # Load non-sensitive settings if present
+            if os.path.exists(SETTINGS_FILE):
+                try:
+                    with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                        public_settings = json.load(f)
+                        for key, value in public_settings.items():
+                            if key in settings and isinstance(value, dict):
+                                settings[key].update(value)
+                except Exception as e:
+                    logger.error(f"Error loading public settings: {e}")
+
+            # Load sensitive settings if present (only merge sensitive keys so we don't overwrite 'enabled')
+            _blackbird_sensitive = {'api_key', 'api_url', 'project_id'}
+            _okapi_sensitive = {'api_key', 'api_url', 'workspace_id'}
+            if os.path.exists(SECRETS_FILE):
+                try:
+                    with open(SECRETS_FILE, 'r', encoding='utf-8') as f:
+                        secret_settings = json.load(f)
+                        for int_key, int_values in secret_settings.items():
+                            if int_key not in settings or not isinstance(int_values, dict):
+                                continue
+                            sensitive = _okapi_sensitive if int_key == 'okapi' else _blackbird_sensitive
+                            for k, v in int_values.items():
+                                if k in sensitive:
+                                    settings[int_key][k] = v
+                except Exception as e:
+                    logger.error(f"Error loading secret settings: {e}")
+
+            return settings
         except Exception as e:
             logger.error(f"Error loading settings: {e}")
-            return {
-                'blackbird': {
-                    'enabled': False,
-                    'api_key': '',
-                    'api_url': '',
-                    'project_id': ''
-                },
-                'okapi': {
-                    'enabled': False,
-                    'api_key': '',
-                    'api_url': '',
-                    'workspace_id': ''
-                }
-            }
+            return IntegrationSettings._default_settings()
     
     @staticmethod
     def save_settings(settings: Dict[str, Any]) -> bool:
-        """Save integration settings to file."""
+        """
+        Save integration settings to two files:
+        - integration_settings.json: non-sensitive values
+        - integration_secrets.json: sensitive values (API keys, URLs, IDs)
+        """
         try:
-            # Ensure directory exists
+            # Ensure directory exists for both files (they share the same root)
             settings_dir = os.path.dirname(SETTINGS_FILE)
             if settings_dir and not os.path.exists(settings_dir):
                 os.makedirs(settings_dir, exist_ok=True)
-            
+
+            # Define which keys are considered sensitive (only these go in secrets file)
+            blackbird_sensitive = {'api_key', 'api_url', 'project_id'}
+            okapi_sensitive = {'api_key', 'api_url', 'workspace_id'}
+
+            public_settings = IntegrationSettings._default_settings()
+            # Secrets file: only sensitive keys, so merging later won't overwrite 'enabled' etc.
+            secret_settings = {
+                'blackbird': {},
+                'okapi': {},
+            }
+
+            blackbird_in = settings.get('blackbird', {})
+            okapi_in = settings.get('okapi', {})
+
+            # Split Blackbird settings
+            for key, value in blackbird_in.items():
+                if key in blackbird_sensitive:
+                    secret_settings['blackbird'][key] = value
+                else:
+                    public_settings['blackbird'][key] = value
+
+            # Split Okapi settings
+            for key, value in okapi_in.items():
+                if key in okapi_sensitive:
+                    secret_settings['okapi'][key] = value
+                else:
+                    public_settings['okapi'][key] = value
+
+            # Write non-sensitive settings
             with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
-                json.dump(settings, f, indent=2, ensure_ascii=False)
-            logger.info("Settings saved successfully")
+                json.dump(public_settings, f, indent=2, ensure_ascii=False)
+
+            # Write only sensitive keys so load merge doesn't overwrite enabled/ci_commands
+            with open(SECRETS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(secret_settings, f, indent=2, ensure_ascii=False)
+
+            logger.info("Settings and secrets saved successfully")
             return True
         except Exception as e:
             logger.error(f"Error saving settings: {e}")
@@ -551,27 +619,49 @@ def get_okapi_client() -> Optional[OkapiAPI]:
     return OkapiAPI(api_key, api_url, workspace_id)
 
 
-def test_integration_connection(integration: str) -> Tuple[bool, Optional[str]]:
+def test_integration_connection(
+    integration: str,
+    override_settings: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> Tuple[bool, Optional[str]]:
     """
     Test connection to a specific integration.
     
     Args:
         integration: 'blackbird' or 'okapi'
+        override_settings: Optional dict with 'blackbird' and/or 'okapi' credentials
+            to use for the test instead of saved settings (e.g. from current form).
         
     Returns:
         Tuple of (success: bool, message: Optional[str])
     """
-    if integration.lower() == 'blackbird':
-        client = get_blackbird_client()
+    integration = integration.lower()
+    overrides = (override_settings or {}).get(integration) or {}
+
+    if integration == 'blackbird':
+        if overrides and all([overrides.get('api_key'), overrides.get('api_url'), overrides.get('project_id')]):
+            client = BlackbirdAPI(
+                overrides['api_key'],
+                overrides['api_url'],
+                overrides['project_id'],
+            )
+        else:
+            client = get_blackbird_client()
         if client:
             return client.test_connection()
         return False, "Blackbird is not enabled or configured"
-    
-    elif integration.lower() == 'okapi':
-        client = get_okapi_client()
+
+    if integration == 'okapi':
+        if overrides and all([overrides.get('api_key'), overrides.get('api_url'), overrides.get('workspace_id')]):
+            client = OkapiAPI(
+                overrides['api_key'],
+                overrides['api_url'],
+                overrides['workspace_id'],
+            )
+        else:
+            client = get_okapi_client()
         if client:
             return client.test_connection()
         return False, "Okapi is not enabled or configured"
-    
+
     return False, f"Unknown integration: {integration}"
 

@@ -6,7 +6,7 @@ import { WorkspaceFiles } from "./workspace-files"
 import { OperationsPanel } from "./operations-panel"
 import { ProcessingHistory } from "./processing-history"
 import { Button } from "@/components/ui/button"
-import { Download, AlertCircle } from "lucide-react"
+import { Download, AlertCircle, Upload } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { XLIFFStatsDialog } from "./xliff-stats-dialog"
@@ -157,13 +157,21 @@ export function TMXWorkspace() {
 
   const selectedFiles = files.filter(file => selectedFileIds.includes(file.id))
 
-  const handleFilesAdded = (newFiles: File[], sourceProject?: {
-    integration: "blackbird" | "okapi"
-    projectId?: string
-    workspaceId?: string
-    fileId?: string
-  }) => {
-    const workspaceFiles = newFiles.map((file) => ({
+  const handleFilesAdded = (
+    newFiles: File[],
+    sourceProject?: {
+      integration: "blackbird" | "okapi"
+      projectId?: string
+      workspaceId?: string
+      fileId?: string
+    } | {
+      integration: "blackbird" | "okapi"
+      projectId?: string
+      workspaceId?: string
+      fileId?: string
+    }[]
+  ) => {
+    const workspaceFiles = newFiles.map((file, i) => ({
       id: crypto.randomUUID(),
       name: file.name,
       type: file.type,
@@ -173,7 +181,7 @@ export function TMXWorkspace() {
       status: "idle" as const,
       operations: [],
       relatedFiles: {},
-      sourceProject: sourceProject,
+      sourceProject: Array.isArray(sourceProject) ? sourceProject[i] : sourceProject,
     }))
 
     setFiles((prev) => [...prev, ...workspaceFiles])
@@ -756,6 +764,13 @@ export function TMXWorkspace() {
     }
   }
 
+  const filesWithUpload = files.filter((f) => f.processedData && f.sourceProject)
+  const handleBulkUploadToProject = async () => {
+    for (const file of filesWithUpload) {
+      await handleUploadToProject(file.id)
+    }
+  }
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2 space-y-6">
@@ -775,7 +790,6 @@ export function TMXWorkspace() {
           onSelectFile={handleFileSelect}
           onRemoveFile={handleFileRemove}
           onDownloadFile={handleDownloadFile}
-          onUploadToProject={handleUploadToProject}
         />
 
         {selectedFiles.length > 0 && (
@@ -800,13 +814,25 @@ export function TMXWorkspace() {
             <p>Selected files: {selectedFileIds.length}</p>
             <p>Operations applied: {files.reduce((acc, file) => acc + file.operations.length, 0)}</p>
             {files.some(file => file.processedData) && (
-              <Button
-                className="w-full mt-4"
-                onClick={handleBulkDownload}
-              >
-                <Download className="mr-2 h-4 w-4" />
-                Download All Processed Files
-              </Button>
+              <div className="flex gap-2 mt-4">
+                <Button
+                  className="flex-1"
+                  onClick={handleBulkDownload}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Download All
+                </Button>
+                {filesWithUpload.length > 0 && (
+                  <Button
+                    className="flex-1"
+                    variant="outline"
+                    onClick={handleBulkUploadToProject}
+                  >
+                    <Upload className="mr-2 h-4 w-4" />
+                    Upload All
+                  </Button>
+                )}
+              </div>
             )}
             {selectedFiles.length > 0 && (
               <div className="mt-4">
@@ -817,14 +843,28 @@ export function TMXWorkspace() {
                     <p className="text-sm text-muted-foreground">
                       {(file.size / 1024).toFixed(2)} KB • {getFileTypeLabel(file.name)}
                     </p>
-                    <Button
-                      className="mt-2 w-full"
-                      onClick={() => handleDownloadFile(file.id)}
-                      disabled={!file.processedData}
-                    >
-                      <Download className="mr-2 h-4 w-4" />
-                      Download Processed File
-                    </Button>
+                    <div className="flex gap-2 mt-2">
+                      <Button
+                        className="flex-1"
+                        size="sm"
+                        onClick={() => handleDownloadFile(file.id)}
+                        disabled={!file.processedData}
+                      >
+                        <Download className="mr-1 h-3 w-3" />
+                        Download
+                      </Button>
+                      {file.processedData && file.sourceProject && (
+                        <Button
+                          className="flex-1"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleUploadToProject(file.id)}
+                        >
+                          <Upload className="mr-1 h-3 w-3" />
+                          Upload
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
