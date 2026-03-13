@@ -6,12 +6,9 @@
     "project_id": ""
   },
   "okapi": {
-    "enabled": true,
+    "enabled": false,
     "api_key": "",
     "api_url": "",
-    "workspace_id": "",
-    "ci_commands": [
-      "tikal.sh -v"
-    ]
+    "workspace_id": ""
   }
 }

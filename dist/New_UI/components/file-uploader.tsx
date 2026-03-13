@@ -17,6 +17,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { toast } from "@/components/ui/use-toast"
+import { Input } from "@/components/ui/input"
 
 type SourceProject = {
   integration: "blackbird" | "okapi"
@@ -44,6 +45,13 @@ export function FileUploader({ onFilesAdded }: FileUploaderProps) {
   const [selectedPullFileIds, setSelectedPullFileIds] = useState<Set<string>>(new Set())
   const [pullListLoading, setPullListLoading] = useState(false)
   const [pullButtonLoading, setPullButtonLoading] = useState(false)
+  const [pullSearch, setPullSearch] = useState("")
+
+  const filteredPullFiles = pullDialogFiles.filter((f) => {
+    if (!pullSearch.trim()) return true
+    const q = pullSearch.toLowerCase()
+    return f.name.toLowerCase().includes(q) || f.id.toLowerCase().includes(q)
+  })
 
   const hasIntegration =
     (settings?.blackbird?.enabled && settings?.blackbird?.api_key && settings?.blackbird?.project_id) ||
@@ -137,11 +145,13 @@ export function FileUploader({ onFilesAdded }: FileUploaderProps) {
         return
       }
       const result = await pullResponse.json()
-      const fileList: ProjectFile[] = (result.files || []).map((f: { id?: string; name?: string; size?: number }) => ({
-        id: f.id ?? "",
-        name: f.name ?? "Unnamed",
-        size: f.size,
-      })).filter((f: ProjectFile) => f.id)
+      const fileList: ProjectFile[] = (result.files || [])
+        .map((f: { id?: string; file_id?: string; name?: string; filename?: string; size?: number }) => ({
+          id: f.id ?? f.file_id ?? "",
+          name: f.name ?? f.filename ?? "Unnamed",
+          size: f.size,
+        }))
+        .filter((f: ProjectFile) => f.id)
       setPullDialogFiles(fileList)
       setPullDialogIntegration(integration)
       setPullDialogWorkspaceId(workspaceId ?? null)
@@ -165,7 +175,7 @@ export function FileUploader({ onFilesAdded }: FileUploaderProps) {
   }
 
   const selectAllPullFiles = (checked: boolean) => {
-    if (checked) setSelectedPullFileIds(new Set(pullDialogFiles.map((f) => f.id)))
+    if (checked) setSelectedPullFileIds(new Set(filteredPullFiles.map((f) => f.id)))
     else setSelectedPullFileIds(new Set())
   }
 
@@ -284,48 +294,69 @@ export function FileUploader({ onFilesAdded }: FileUploaderProps) {
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
-          ) : pullDialogFiles.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4">No files in this project.</p>
           ) : (
             <>
-              <div className="flex items-center gap-2 py-2 border-b">
-                <Checkbox
-                  id="pull-select-all"
-                  checked={selectedPullFileIds.size === pullDialogFiles.length}
-                  onCheckedChange={(c) => selectAllPullFiles(c === true)}
+              <div className="px-2 py-2">
+                <Input
+                  placeholder="Search files..."
+                  value={pullSearch}
+                  onChange={(e) => setPullSearch(e.target.value)}
+                  className="h-8 text-sm"
                 />
-                <label htmlFor="pull-select-all" className="text-sm font-medium cursor-pointer">
-                  Select all
-                </label>
               </div>
-              <ScrollArea className="max-h-[280px] rounded-md border">
-                <div className="p-2 space-y-1">
-                  {pullDialogFiles.map((f) => (
-                    <div
-                      key={f.id}
-                      className="flex items-center gap-2 rounded-sm px-2 py-1.5 hover:bg-muted/50"
-                    >
-                      <Checkbox
-                        id={`pull-${f.id}`}
-                        checked={selectedPullFileIds.has(f.id)}
-                        onCheckedChange={() => togglePullFileSelection(f.id)}
-                      />
-                      <label
-                        htmlFor={`pull-${f.id}`}
-                        className="flex-1 text-sm cursor-pointer truncate"
-                        title={f.name}
-                      >
-                        {f.name}
-                        {f.size != null && (
-                          <span className="text-muted-foreground ml-1">
-                            ({(f.size / 1024).toFixed(1)} KB)
-                          </span>
-                        )}
-                      </label>
+              {pullDialogFiles.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4">No files in this project.</p>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 py-2 border-b">
+                    <Checkbox
+                      id="pull-select-all"
+                      checked={
+                        filteredPullFiles.length > 0 &&
+                        filteredPullFiles.every((f) => selectedPullFileIds.has(f.id))
+                      }
+                      onCheckedChange={(c) => selectAllPullFiles(c === true)}
+                    />
+                    <label htmlFor="pull-select-all" className="text-sm font-medium cursor-pointer">
+                      Select all
+                    </label>
+                  </div>
+                  <ScrollArea className="max-h-[280px] rounded-md border">
+                    <div className="p-2 space-y-1">
+                      {filteredPullFiles.length === 0 ? (
+                        <p className="text-sm text-muted-foreground px-2 py-2">
+                          No files match your search.
+                        </p>
+                      ) : (
+                        filteredPullFiles.map((f) => (
+                          <div
+                            key={f.id}
+                            className="flex items-center gap-2 rounded-sm px-2 py-1.5 hover:bg-muted/50"
+                          >
+                            <Checkbox
+                              id={`pull-${f.id}`}
+                              checked={selectedPullFileIds.has(f.id)}
+                              onCheckedChange={() => togglePullFileSelection(f.id)}
+                            />
+                            <label
+                              htmlFor={`pull-${f.id}`}
+                              className="flex-1 text-sm cursor-pointer truncate"
+                              title={f.name}
+                            >
+                              {f.name}
+                              {f.size != null && (
+                                <span className="text-muted-foreground ml-1">
+                                  ({(f.size / 1024).toFixed(1)} KB)
+                                </span>
+                              )}
+                            </label>
+                          </div>
+                        ))
+                      )}
                     </div>
-                  ))}
-                </div>
-              </ScrollArea>
+                  </ScrollArea>
+                </>
+              )}
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" onClick={() => setPullDialogOpen(false)}>
                   Cancel

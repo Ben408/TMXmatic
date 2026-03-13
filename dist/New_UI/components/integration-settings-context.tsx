@@ -21,7 +21,6 @@ export type IntegrationSettings = {
     api_key?: string
     api_url?: string
     workspace_id?: string
-    ci_commands?: string[]
   }
 }
 

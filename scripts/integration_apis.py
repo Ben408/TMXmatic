@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Settings file paths
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
-# Non-sensitive settings that are safe to commit (e.g. enabled flags, CI commands)
+# Non-sensitive settings that are safe to commit (e.g. enabled flags)
 SETTINGS_FILE = os.path.join(PROJECT_ROOT, 'integration_settings.json')
 # Sensitive settings (API keys, URLs, project/workspace IDs) – should be gitignored
 SECRETS_FILE = os.path.join(PROJECT_ROOT, 'integration_secrets.json')
@@ -40,9 +40,7 @@ class IntegrationSettings:
                 'enabled': False,
                 'api_key': '',
                 'api_url': '',
-                'workspace_id': '',
-                # List of Okapi CI commands (e.g., tikal.sh -v, tikal.sh -lu)
-                'ci_commands': []
+                'workspace_id': ''
             }
         }
     
@@ -366,14 +364,24 @@ class OkapiAPI:
         
         Args:
             api_key: Okapi API key
-            api_url: Okapi API base URL (e.g., https://api.okapi.com or https://your-instance.okapi.com/api/v1)
+            api_url: Okapi API base URL.
+                IMPORTANT:
+                - This can be either the bare host (e.g. http://localhost:8000)
+                  or a path with /api or /api/v1 (e.g. http://host/api/v1).
+                - We normalize it so that requests are sent to the host root,
+                  since the Okapi endpoints we use live under /workspaces/...,
+                  not under /api or /api/v1.
             workspace_id: Okapi workspace ID
         """
         self.api_key = api_key
-        self.api_url = api_url.rstrip('/')
-        # Ensure API URL has /api/v1 if not present
-        if '/api/v1' not in self.api_url and '/api' not in self.api_url:
-            self.api_url = f"{self.api_url}/api/v1"
+        base = api_url.rstrip('/')
+        # If user includes /api or /api/v1 in the URL, strip it so that
+        # all requests go to {host}/workspaces/... instead of {host}/api.../workspaces/...
+        if base.endswith('/api/v1'):
+            base = base[: -len('/api/v1')]
+        elif base.endswith('/api'):
+            base = base[: -len('/api')]
+        self.api_url = base
         self.workspace_id = workspace_id
         self.session = requests.Session()
         # Okapi typically uses X-API-Key header or Authorization header
@@ -472,14 +480,21 @@ class OkapiAPI:
                     data['project_id'] = project_id
                 
                 # Okapi typically uses: POST /api/v1/workspaces/{workspace_id}/files
-                endpoint = f'/workspaces/{self.workspace_id}/files'
+                endpoint = f'/workspaces/{self.workspace_id}/upload-xlf'
                 url = f"{self.api_url}/{endpoint.lstrip('/')}"
                 
                 # Remove Content-Type header for multipart/form-data
                 headers = {k: v for k, v in self.session.headers.items() if k.lower() != 'content-type'}
                 
                 logger.info(f"Uploading file to {url}")
-                response = self.session.post(url, files=files, data=data, headers=headers, timeout=120)
+                response = self.session.post(
+                    url,
+                    params={'api_key': self.api_key},   # <-- add this line
+                    files=files,
+                    data=data,
+                    headers=headers,
+                    timeout=120,
+                )
                 response.raise_for_status()
                 
                 return True, response.json()
@@ -510,7 +525,8 @@ class OkapiAPI:
         try:
             # Okapi typically uses: GET /api/v1/files/{file_id}/download
             # or GET /api/v1/workspaces/{workspace_id}/files/{file_id}/download
-            endpoint = f'/workspaces/{self.workspace_id}/files/{file_id}/download'
+            endpoint = f'/api/v1/workspaces/{self.workspace_id}/processed/{file_id}'
+            print(self.api_url)
             url = f"{self.api_url}/{endpoint.lstrip('/')}"
             
             response = self.session.get(url, timeout=120, stream=True)
@@ -550,8 +566,20 @@ class OkapiAPI:
         if project_id:
             params['project_id'] = project_id
         
+        # Primary endpoint: standard workspace files listing
         endpoint = f'/workspaces/{self.workspace_id}/files'
-        return self._make_request('GET', endpoint, params=params)
+        success, result = self._make_request('GET', endpoint, params=params)
+        if success:
+            return True, result
+
+        # If the server exposes processed XLFs under /workspaces/{workspace_id}/processed,
+        # fall back to that endpoint specifically when the primary one returns 404.
+        if isinstance(result, dict) and result.get('status_code') == 404:
+            fallback_endpoint = f'/workspaces/{self.workspace_id}/processed'
+            return self._make_request('GET', fallback_endpoint, params=params)
+
+        # Otherwise, propagate the original error
+        return False, result
     
     def list_projects(self, limit: int = 50, offset: int = 0) -> Tuple[bool, Optional[Dict[str, Any]]]:
         """
