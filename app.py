@@ -12,6 +12,7 @@ import secrets
 from pathlib import Path
 import shutil
 import tempfile
+import xml.etree.ElementTree as ET
 
 # CRITICAL: Make Flask completely self-contained and path-independent
 # Get the directory where THIS Flask app is running
@@ -215,6 +216,77 @@ def allowed_file(filename):
     ALLOWED_EXTENSIONS = {'tmx', 'csv', 'xlsx', 'xls', 'zip', 'tbx', 'xlf', 'xliff'}
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+def _xliff_roundtrip_sidecar_path(tmx_path: str) -> str:
+    """JSON sidecar written when XLIFF is converted to TMX so processors can round-trip even if they strip TU props."""
+    return os.path.splitext(tmx_path)[0] + '.xliff-origin.json'
+
+
+def _write_xliff_roundtrip_sidecar(tmx_path: str, xliff_version: str) -> None:
+    try:
+        with open(_xliff_roundtrip_sidecar_path(tmx_path), 'w', encoding='utf-8') as f:
+            json.dump({'xliff_version': xliff_version}, f)
+    except Exception as e:
+        logger.warning(f"Could not write XLIFF round-trip sidecar for {tmx_path}: {e}")
+
+
+def _read_xliff_version_from_sidecar(tmx_path: str):
+    path = _xliff_roundtrip_sidecar_path(tmx_path)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding='utf-8') as f:
+            data = json.load(f)
+        v = data.get('xliff_version')
+        if v in ('1.2', '2.0', '2.2'):
+            return v
+    except Exception as e:
+        logger.debug(f"Could not read XLIFF sidecar {path}: {e}")
+    return None
+
+
+def _detect_xliff_version_in_tmx(filepath: str):
+    """
+    Find original XLIFF version for round-trip: header notes, TU props, raw XML scan, then sidecar.
+    Returns version string or None if this TMX did not originate from XLIFF (in this app).
+    """
+    import PythonTmx
+
+    try:
+        tmx = PythonTmx.Tmx(filepath)
+        for note in tmx.header.notes:
+            note_text = getattr(note, 'text', None) or getattr(note, 'content', None)
+            if note_text and 'Original XLIFF version' in str(note_text):
+                version = str(note_text).split(':')[-1].strip()
+                if version in ('1.2', '2.0', '2.2'):
+                    return version
+
+        for tu in tmx.tus:
+            for prop in tu.props:
+                if getattr(prop, 'type', None) == 'x-xliff-version':
+                    version = (prop.text or '').strip()
+                    if version in ('1.2', '2.0', '2.2'):
+                        return version
+    except Exception as e:
+        logger.debug(f"PythonTmx scan for XLIFF version failed for {filepath}: {e}")
+
+    try:
+        root = ET.parse(filepath).getroot()
+        for prop in root.iter('prop'):
+            if prop.get('type') == 'x-xliff-version':
+                version = (prop.text or '').strip()
+                if version in ('1.2', '2.0', '2.2'):
+                    return version
+        for note in root.iter('note'):
+            if note.text and 'Original XLIFF version' in note.text:
+                version = note.text.split(':')[-1].strip()
+                if version in ('1.2', '2.0', '2.2'):
+                    return version
+    except Exception as e:
+        logger.debug(f"XML scan for XLIFF version failed for {filepath}: {e}")
+
+    return _read_xliff_version_from_sidecar(filepath)
+
+
 def convert_xliff_to_tmx_if_needed(filepath):
     """Convert XLIFF file to TMX if the file is an XLIFF file, otherwise return original path"""
     if not os.path.exists(filepath):
@@ -225,7 +297,8 @@ def convert_xliff_to_tmx_if_needed(filepath):
     if ext in ['.xlf', '.xliff']:
         try:
             logger.info(f"Converting XLIFF file to TMX: {filepath}")
-            tmx_path, _ = xliff_to_tmx(filepath)
+            tmx_path, xliff_version = xliff_to_tmx(filepath)
+            _write_xliff_roundtrip_sidecar(tmx_path, xliff_version)
             # Remove original XLIFF file after conversion
             try:
                 os.remove(filepath)
@@ -248,44 +321,27 @@ def convert_tmx_to_xliff_if_needed(filepath):
         return filepath
     
     try:
-        # Try to check if TMX contains XLIFF version metadata
-        import PythonTmx
-        tmx = PythonTmx.Tmx(filepath)
-        
-        # Check header notes for original XLIFF version
-        xliff_version = None
-        for note in tmx.header.notes:
-            note_text = None
-            if hasattr(note, 'content') and note.content:
-                note_text = note.content
-            elif hasattr(note, 'text') and note.text:
-                note_text = note.text
-            
-            if note_text and 'Original XLIFF version' in note_text:
-                # Extract version from note text
-                version = note_text.split(':')[-1].strip()
-                if version in ['1.2', '2.0', '2.2']:
-                    xliff_version = version
-                    break
-        
-        # If we found XLIFF version metadata, convert back to XLIFF
+        xliff_version = _detect_xliff_version_in_tmx(filepath)
+
         if xliff_version:
             logger.info(f"Converting TMX file back to XLIFF {xliff_version}: {filepath}")
-            # Generate output filename with .xlf extension
             base_path = os.path.splitext(filepath)[0]
             xliff_path = f"{base_path}.xlf"
             tmx_to_xliff(filepath, xliff_path, xliff_version)
-            # Remove original TMX file after conversion
             try:
                 os.remove(filepath)
             except Exception as e:
                 logger.warning(f"Could not remove TMX file {filepath}: {e}")
+            sidecar = _xliff_roundtrip_sidecar_path(filepath)
+            if os.path.exists(sidecar):
+                try:
+                    os.remove(sidecar)
+                except OSError as e:
+                    logger.warning(f"Could not remove XLIFF sidecar {sidecar}: {e}")
             return xliff_path
     except Exception as e:
-        # If we can't determine or convert, just return original file
         logger.debug(f"Could not convert TMX to XLIFF (file may not be from XLIFF): {e}")
-        pass
-    
+
     return filepath
 
 @app.before_request
@@ -826,7 +882,10 @@ def upload_to_project():
         filename = secure_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
-        
+
+        # If this TMX came from an XLF in TMXmatic, convert back to XLIFF before sending to connectors
+        upload_path = convert_tmx_to_xliff_if_needed(filepath)
+
         try:
             if integration.lower() == 'blackbird':
                 if not project_id:
@@ -837,7 +896,7 @@ def upload_to_project():
                     return jsonify({'error': 'Blackbird is not configured'}), 400
                 
                 # Upload file to Blackbird
-                success, result = client.upload_file(filepath)
+                success, result = client.upload_file(upload_path)
                 if success:
                     return jsonify({
                         'success': True,
@@ -857,7 +916,7 @@ def upload_to_project():
                     return jsonify({'error': 'Okapi is not configured'}), 400
                 
                 # Upload file to Okapi
-                success, result = client.upload_file(filepath, project_id=project_id if project_id else None)
+                success, result = client.upload_file(upload_path, project_id=project_id if project_id else None)
                 if success:
                     return jsonify({
                         'success': True,
@@ -872,12 +931,12 @@ def upload_to_project():
                 return jsonify({'error': f'Unknown integration: {integration}'}), 400
                 
         finally:
-            # Clean up temporary file
-            try:
-                if os.path.exists(filepath):
-                    os.remove(filepath)
-            except Exception as e:
-                logger.warning(f"Could not remove temporary file {filepath}: {e}")
+            for path in {filepath, upload_path}:
+                try:
+                    if path and os.path.exists(path):
+                        os.remove(path)
+                except Exception as e:
+                    logger.warning(f"Could not remove temporary file {path}: {e}")
                 
     except Exception as e:
         logger.error(f"Error uploading file to project: {e}")

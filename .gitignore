@@ -3,3 +3,4 @@ integration_secrets.json
 mock_okapi.py
 test.tmx
 **/__pycache__
+uploads

@@ -4,7 +4,11 @@ from pathlib import Path
 import logging
 import re
 import lxml.etree as etree
-from .tmx_utils import create_compatible_header
+from .tmx_utils import (
+    create_compatible_header,
+    append_header_notes_from_xml,
+    append_tu_props_from_element,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +109,8 @@ def clean_tmx_for_mt(file_path: str) -> str:
         )
         
         clean_header = create_compatible_header(minimal_header, "TMX MT Cleaner", "1.0")
-        
+        append_header_notes_from_xml(header_elem, clean_header)
+
         # Parse TUs manually from XML
         tus = []
         body_elem = tmx_root.find('body')
@@ -119,6 +124,7 @@ def clean_tmx_for_mt(file_path: str) -> str:
                         tuv = PythonTmx.Tuv(lang=lang)
                         tuv.content = seg_elem.text
                         tu.tuvs.append(tuv)
+                append_tu_props_from_element(tu_elem, tu)
                 if len(tu.tuvs) >= 2:  # Only add TUs with both source and target
                     tus.append(tu)
         

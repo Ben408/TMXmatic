@@ -10,6 +10,13 @@ import { Download, AlertCircle, Upload } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { XLIFFStatsDialog } from "./xliff-stats-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { ArrowUp, ArrowDown, Trash2 } from "lucide-react"
 import { Loader2 } from "lucide-react"
@@ -22,9 +29,12 @@ import {
 import JSZip from "jszip"
 
 export type XLIFFStats = {
-  totalSegments: number
-  emptyTargets: number
-  percentage: number
+  translations_found?: number
+  updates_made?: number
+  remaining_empty?: number
+  total_segments?: number
+  empty_segments?: number
+  completion_rate?: number
 }
 
 export type WorkspaceFile = {
@@ -154,22 +164,27 @@ export function TMXWorkspace() {
   const [currentOperation, setCurrentOperation] = useState<"leverage" | "check" | null>(null)
   const [queuedOperations, setQueuedOperations] = useState<string[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
+  const [uploadedCount, setUploadedCount] = useState(0)
+  const [uploadTargetFileIds, setUploadTargetFileIds] = useState<string[]>([])
 
   const selectedFiles = files.filter(file => selectedFileIds.includes(file.id))
 
   const handleFilesAdded = (
     newFiles: File[],
-    sourceProject?: {
-      integration: "blackbird" | "okapi"
-      projectId?: string
-      workspaceId?: string
-      fileId?: string
-    } | {
-      integration: "blackbird" | "okapi"
-      projectId?: string
-      workspaceId?: string
-      fileId?: string
-    }[]
+    sourceProject?:
+      | {
+          integration: "blackbird" | "okapi"
+          projectId?: string
+          workspaceId?: string
+          fileId?: string
+        }
+      | {
+          integration: "blackbird" | "okapi"
+          projectId?: string
+          workspaceId?: string
+          fileId?: string
+        }[]
   ) => {
     const workspaceFiles = newFiles.map((file, i) => ({
       id: crypto.randomUUID(),
@@ -190,9 +205,15 @@ export function TMXWorkspace() {
       setSelectedFileIds([workspaceFiles[0].id])
     }
 
+    const sourceLabel = Array.isArray(sourceProject)
+      ? sourceProject[0]?.integration
+      : sourceProject?.integration
+
     toast({
       title: "Files added",
-      description: `${newFiles.length} file(s) added to workspace${sourceProject ? ` from ${sourceProject.integration}` : ''}`,
+      description: `${newFiles.length} file(s) added to workspace${
+        sourceLabel ? ` from ${sourceLabel}` : ""
+      }`,
     })
   }
 
@@ -749,11 +770,8 @@ export function TMXWorkspace() {
       }
 
       const result = await response.json()
-      
-      toast({
-        title: "Success",
-        description: `File uploaded successfully to ${file.sourceProject.integration} project`,
-      })
+
+      setUploadedCount((prev) => prev + 1)
     } catch (error) {
       console.error("Error uploading file to project:", error)
       toast({
@@ -765,10 +783,20 @@ export function TMXWorkspace() {
   }
 
   const filesWithUpload = files.filter((f) => f.processedData && f.sourceProject)
-  const handleBulkUploadToProject = async () => {
-    for (const file of filesWithUpload) {
-      await handleUploadToProject(file.id)
+  const runUploadWithModal = async (fileIds: string[]) => {
+    if (fileIds.length === 0) return
+    setUploadedCount(0)
+    setUploadTargetFileIds(fileIds)
+    setUploadDialogOpen(true)
+    for (const fileId of fileIds) {
+      await handleUploadToProject(fileId)
     }
+  }
+  const handleBulkUploadToProject = async () => {
+    await runUploadWithModal(filesWithUpload.map((f) => f.id))
+  }
+  const handleSingleUploadToProject = async (fileId: string) => {
+    await runUploadWithModal([fileId])
   }
 
   return (
@@ -858,7 +886,7 @@ export function TMXWorkspace() {
                           className="flex-1"
                           size="sm"
                           variant="outline"
-                          onClick={() => handleUploadToProject(file.id)}
+                          onClick={() => handleSingleUploadToProject(file.id)}
                         >
                           <Upload className="mr-1 h-3 w-3" />
                           Upload
@@ -958,6 +986,33 @@ export function TMXWorkspace() {
           operation={currentOperation || "check"}
         />
       )}
+
+      <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Uploading to project</DialogTitle>
+            <DialogDescription>
+              {uploadTargetFileIds.length > 0
+                ? `Uploaded ${uploadedCount} of ${uploadTargetFileIds.length} file(s).`
+                : "No files available for upload."}
+            </DialogDescription>
+          </DialogHeader>
+          {uploadTargetFileIds.length > 0 && uploadedCount >= uploadTargetFileIds.length && (
+            <p className="text-sm text-muted-foreground mt-2">
+              {uploadedCount} file(s) uploaded.
+            </p>
+          )}
+          <div className="flex justify-end mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setUploadDialogOpen(false)}
+              disabled={uploadTargetFileIds.length > 0 && uploadedCount < uploadTargetFileIds.length}
+            >
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

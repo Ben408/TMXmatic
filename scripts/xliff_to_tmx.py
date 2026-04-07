@@ -6,10 +6,18 @@ Preserves metadata and stores original XLIFF version information.
 import lxml.etree as etree
 from pathlib import Path
 import logging
-from datetime import datetime
 from typing import Dict, Optional, Tuple
 import json
 import PythonTmx
+
+from .tmx_utils import encode_xliff_markup_for_tmx_prop
+from .xliff_xml_fragment import (
+    build_target_element_mirroring_seg_source,
+    build_target_element_mirroring_source_markup,
+    element_has_inline_markup,
+    normalize_seg_source_storage_xml,
+    normalize_xliff_inline_fragment_xml,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +28,6 @@ XLIFF_22_NS_URI = 'urn:oasis:names:tc:xliff:document:2.2'
 XLIFF_12_NS = {'xliff12': XLIFF_12_NS_URI}
 XLIFF_20_NS = {'ns': XLIFF_20_NS_URI}
 XLIFF_22_NS = {'ns': XLIFF_22_NS_URI}
-XML_NS = {'xml': 'http://www.w3.org/XML/1998/namespace'}
 
 
 def detect_xliff_version(xliff_root: etree.Element) -> Tuple[str, Dict[str, str], Optional[str]]:
@@ -152,6 +159,28 @@ def get_target_language(xliff_root: etree.Element, file_elem: Optional[etree.Ele
     return 'en'
 
 
+def _iter_seg_source_elements(trans_unit: etree.Element) -> list:
+    """
+    All <seg-source> elements under a trans-unit (any depth, any XLIFF 1.2 namespace).
+    Okapi and other tools sometimes nest or namespace these differently than direct children.
+    """
+    out = []
+    seen = set()
+    try:
+        for el in trans_unit.xpath('.//*[local-name() = "seg-source"]'):
+            i = id(el)
+            if i not in seen:
+                seen.add(i)
+                out.append(el)
+    except (etree.XPathEvalError, TypeError):
+        pass
+    if not out:
+        for child in trans_unit:
+            if isinstance(child.tag, str) and etree.QName(child.tag).localname == 'seg-source':
+                out.append(child)
+    return out
+
+
 def extract_units_xliff12(xliff_root: etree.Element, ns_uri: Optional[str] = None) -> list:
     """
     Extract translation units from XLIFF 1.2 format.
@@ -183,6 +212,11 @@ def extract_units_xliff12(xliff_root: etree.Element, ns_uri: Optional[str] = Non
     for file_elem in file_elems:
         source_lang = file_elem.get('source-language', 'en')
         target_lang = get_target_language(xliff_root, file_elem)
+
+        file_attributes = {}
+        for attr_name, attr_value in file_elem.attrib.items():
+            if attr_value:
+                file_attributes[attr_name] = attr_value
         
         # Find trans-unit elements
         if use_namespace:
@@ -234,6 +268,51 @@ def extract_units_xliff12(xliff_root: etree.Element, ns_uri: Optional[str] = Non
                         target_attrs[attr_name] = attr_value
                 if target_attrs:
                     metadata['target_attributes'] = target_attrs
+
+            # Preserve <seg-source> (may contain mrk/bpt etc.) as full element XML
+            seg_source_elems = _iter_seg_source_elements(trans_unit)
+            seg_sources_xml = []
+            for seg_elem in seg_source_elems:
+                raw = etree.tostring(seg_elem, encoding='unicode', with_tail=False)
+                seg_sources_xml.append(normalize_seg_source_storage_xml(raw))
+            if seg_sources_xml:
+                metadata['seg_sources'] = seg_sources_xml
+
+            # Preserve full <source> / <target> when they contain inline markup (e.g. <mrk>)
+            if source_elem is not None and element_has_inline_markup(source_elem):
+                raw_src = etree.tostring(source_elem, encoding='unicode', with_tail=False)
+                metadata['source_markup_xml'] = normalize_xliff_inline_fragment_xml(raw_src, 'source')
+            if target_elem is not None and element_has_inline_markup(target_elem):
+                raw_tgt = etree.tostring(target_elem, encoding='unicode', with_tail=False)
+                metadata['target_markup_xml'] = normalize_xliff_inline_fragment_xml(raw_tgt, 'target')
+
+            # Okapi / common CAT pattern: <mrk> lives in <seg-source> (and sometimes <source>) while
+            # <target> is plain or absent. Mirror structure into target_markup_xml (must not require
+            # <target> — many pipelines omit it until post-translation).
+            if not metadata.get('target_markup_xml'):
+                ttext = get_text_content(target_elem) if target_elem is not None else ''
+                try:
+                    if metadata.get('source_markup_xml'):
+                        built = build_target_element_mirroring_source_markup(
+                            metadata['source_markup_xml'], ttext
+                        )
+                        metadata['target_markup_xml'] = normalize_xliff_inline_fragment_xml(
+                            etree.tostring(built, encoding='unicode', with_tail=False),
+                            'target',
+                        )
+                    elif metadata.get('seg_sources'):
+                        first_seg = (metadata['seg_sources'][0] or '').strip()
+                        if first_seg:
+                            ss_norm = normalize_seg_source_storage_xml(first_seg)
+                            frag = etree.fromstring(ss_norm)
+                            if len(frag) > 0:
+                                built = build_target_element_mirroring_seg_source(first_seg, ttext)
+                                metadata['target_markup_xml'] = normalize_xliff_inline_fragment_xml(
+                                    etree.tostring(built, encoding='unicode', with_tail=False),
+                                    'target',
+                                )
+                except (etree.XMLSyntaxError, ValueError, TypeError) as e:
+                    logger.debug("Could not synthesize target_markup_xml from source/seg-source: %s", e)
             
             # Extract notes
             notes = []
@@ -367,6 +446,9 @@ def extract_units_xliff12(xliff_root: etree.Element, ns_uri: Optional[str] = Non
                 props.append(prop_data)
             if props:
                 metadata['props'] = props
+
+            if file_attributes:
+                metadata['file_attributes'] = dict(file_attributes)
             
             units.append((source_text, target_text, source_lang, target_lang, metadata))
     
@@ -389,6 +471,11 @@ def extract_units_xliff20(xliff_root: etree.Element, ns: Dict[str, str]) -> list
     for file_elem in xliff_root.findall('.//ns:file', ns):
         source_lang = file_elem.get('source-language', 'en')
         target_lang = get_target_language(xliff_root, file_elem)
+
+        file_attributes = {}
+        for attr_name, attr_value in file_elem.attrib.items():
+            if attr_value:
+                file_attributes[attr_name] = attr_value
         
         for unit_elem in file_elem.findall('.//ns:unit', ns):
             # Capture ALL attributes from unit
@@ -465,6 +552,9 @@ def extract_units_xliff20(xliff_root: etree.Element, ns: Dict[str, str]) -> list
                 contexts.append(context_data)
             if contexts:
                 metadata['contexts'] = contexts
+
+            if file_attributes:
+                metadata['file_attributes'] = dict(file_attributes)
             
             units.append((source_text, target_text, source_lang, target_lang, metadata))
     
@@ -572,7 +662,7 @@ def xliff_to_tmx(xliff_file: str, output_file: Optional[str] = None) -> Tuple[st
             # Store ALL trans-unit/unit attributes as properties
             for key, value in metadata.items():
                 # Skip special keys that are handled separately
-                if key in ['notes', 'contexts', 'context_groups', 'alt_trans', 'source_attributes', 'target_attributes', 'segment_attributes', 'props', 'prop']:
+                if key in ['notes', 'contexts', 'context_groups', 'alt_trans', 'source_attributes', 'target_attributes', 'segment_attributes', 'props', 'prop', 'file_attributes', 'seg_sources', 'source_markup_xml', 'target_markup_xml']:
                     continue
                 
                 if value:  # Only store non-empty values
@@ -624,6 +714,31 @@ def xliff_to_tmx(xliff_file: str, output_file: Optional[str] = None) -> Tuple[st
             if 'props' in metadata:
                 props_json = json.dumps(metadata['props'], ensure_ascii=False)
                 prop = PythonTmx.Prop(type="x-xliff-props", text=props_json)
+                tu.props.append(prop)
+
+            # Preserve <seg-source> element(s) (XLIFF 1.2)
+            if metadata.get('seg_sources'):
+                seg_json = json.dumps(metadata['seg_sources'], ensure_ascii=False)
+                prop = PythonTmx.Prop(type="x-xliff-seg-sources", text=seg_json)
+                tu.props.append(prop)
+
+            if metadata.get('source_markup_xml'):
+                prop = PythonTmx.Prop(
+                    type="x-xliff-source-markup",
+                    text=encode_xliff_markup_for_tmx_prop(metadata['source_markup_xml']),
+                )
+                tu.props.append(prop)
+            if metadata.get('target_markup_xml'):
+                prop = PythonTmx.Prop(
+                    type="x-xliff-target-markup",
+                    text=encode_xliff_markup_for_tmx_prop(metadata['target_markup_xml']),
+                )
+                tu.props.append(prop)
+
+            # Preserve <file> element attributes (path, original, datatype, etc.)
+            if metadata.get('file_attributes'):
+                file_attrs_json = json.dumps(metadata['file_attributes'], ensure_ascii=False)
+                prop = PythonTmx.Prop(type="x-xliff-file-attributes", text=file_attrs_json)
                 tu.props.append(prop)
             
             # Add notes

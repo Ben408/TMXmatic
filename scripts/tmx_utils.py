@@ -1,8 +1,78 @@
+import base64
+import json
+import os
+import shutil
 import PythonTmx
 import logging
 import lxml.etree as etree
+from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# TMX <prop> payload for full-element XLIFF markup (avoids JSON + raw < in XML issues)
+MARKUP_XML_B64_PREFIX = 'b64:'
+
+_XML_NS_LANG = '{http://www.w3.org/XML/1998/namespace}lang'
+
+
+def local_name(tag) -> str:
+    """XML element local name (works for default-namespace TMX)."""
+    if not isinstance(tag, str):
+        return ''
+    return etree.QName(tag).localname
+
+
+def children_by_local(parent: etree.ElementBase, local: str):
+    """Direct children whose local name matches."""
+    return [c for c in parent if isinstance(c.tag, str) and local_name(c.tag) == local]
+
+
+def element_inner_text(elem: etree.ElementBase) -> str:
+    """All text in elem (CDATA, split nodes, inline codes in <seg>)."""
+    return ''.join(elem.itertext())
+
+
+def prop_inner_text(prop_elem: etree.ElementBase) -> str:
+    """
+    Payload inside <prop>. If unescaped '<' split JSON into child elements, rebuild string.
+    """
+    if len(prop_elem) == 0:
+        return prop_elem.text or ''
+    chunks = []
+    if prop_elem.text is not None:
+        chunks.append(prop_elem.text)
+    for child in prop_elem:
+        chunks.append(etree.tostring(child, encoding='unicode', with_tail=False))
+        if child.tail is not None:
+            chunks.append(child.tail)
+    return ''.join(chunks)
+
+
+def encode_xliff_markup_for_tmx_prop(xml_unicode: str) -> str:
+    """ASCII-safe <prop> text for round-trip (no embedded angle brackets)."""
+    return MARKUP_XML_B64_PREFIX + base64.b64encode(xml_unicode.encode('utf-8')).decode('ascii')
+
+
+def decode_xliff_markup_from_tmx_prop(prop_text: str) -> Optional[str]:
+    """Inverse of encode_xliff_markup_for_tmx_prop; also accepts legacy json.dumps(string) props."""
+    if prop_text is None:
+        return None
+    v = str(prop_text).strip()
+    if not v:
+        return None
+    if v.startswith(MARKUP_XML_B64_PREFIX):
+        try:
+            return base64.b64decode(v[len(MARKUP_XML_B64_PREFIX) :].encode('ascii')).decode('utf-8')
+        except (ValueError, UnicodeError, TypeError):
+            return None
+    try:
+        parsed = json.loads(v)
+        if isinstance(parsed, str):
+            return parsed
+    except (json.JSONDecodeError, TypeError, ValueError):
+        pass
+    return v
+
 
 def from_tmx(file_path):
     """Load a TMX file and return a TMX object"""
@@ -223,4 +293,52 @@ def copy_header_with_tool_info(original_header, tool_name, tool_version="1.0"):
         
     except Exception as e:
         logger.error(f"Error copying header: {e}")
-        return create_compatible_header(original_header, tool_name, tool_version) 
+        return create_compatible_header(original_header, tool_name, tool_version)
+
+
+def append_header_notes_from_xml(header_elem, target_header: PythonTmx.Header) -> None:
+    """Copy <note> children from parsed TMX <header> onto a PythonTmx header (XLIFF round-trip)."""
+    if header_elem is None:
+        return
+    for note_elem in children_by_local(header_elem, 'note'):
+        note_text = element_inner_text(note_elem)
+        note = PythonTmx.Note(text=note_text)
+        note_lang = note_elem.get(_XML_NS_LANG)
+        if note_lang:
+            note.lang = note_lang
+        target_header.notes.append(note)
+
+
+def append_tu_props_from_element(tu_elem, tu: PythonTmx.Tu) -> None:
+    """Copy <prop> children from a <tu> element onto a PythonTmx Tu (XLIFF metadata)."""
+    for prop_elem in children_by_local(tu_elem, 'prop'):
+        ptype = prop_elem.get('type')
+        if not ptype:
+            continue
+        ptext = prop_inner_text(prop_elem)
+        prop = PythonTmx.Prop(type=ptype, text=ptext)
+        lang = prop_elem.get(_XML_NS_LANG)
+        if lang:
+            prop.lang = lang
+        tu.props.append(prop)
+
+
+def copy_xliff_roundtrip_sidecar(source_tmx_path: str, *output_tmx_paths: str) -> None:
+    """
+    When a script writes clean_* or duplicates_* TMX files, copy *.xliff-origin.json
+    from the input stem to each output stem so convert_tmx_to_xliff_if_needed can find it.
+    """
+    src = os.path.splitext(source_tmx_path)[0] + '.xliff-origin.json'
+    if not os.path.isfile(src):
+        return
+    src_abs = os.path.abspath(src)
+    for outp in output_tmx_paths:
+        if not outp:
+            continue
+        dst = os.path.splitext(outp)[0] + '.xliff-origin.json'
+        if os.path.abspath(dst) == src_abs:
+            continue
+        try:
+            shutil.copy2(src, dst)
+        except OSError as e:
+            logger.warning(f"Could not copy XLIFF round-trip sidecar to {dst}: {e}")

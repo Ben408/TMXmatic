@@ -6,7 +6,7 @@
     "project_id": ""
   },
   "okapi": {
-    "enabled": false,
+    "enabled": true,
     "api_key": "",
     "api_url": "",
     "workspace_id": ""
