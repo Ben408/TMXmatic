@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState } from "react"
+import { format } from "date-fns"
 import { FileUploader } from "./file-uploader"
 import { WorkspaceFiles } from "./workspace-files"
 import { OperationsPanel } from "./operations-panel"
@@ -130,7 +131,7 @@ export const OPERATIONS: Operation[] = [
   { 
     id: "batch_process_mt", 
     name: "Batch Clean TMX for MT",
-    description: "Apply multiple cleaning operations for machine translation."
+    description: "Batch clean (empty targets, duplicates, sentence filter), optional old-TU cutoff, then clean_for_mt for MT training output."
   },
   { 
     id: "xliff_tmx_leverage", 
@@ -167,8 +168,34 @@ export function TMXWorkspace() {
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
   const [uploadedCount, setUploadedCount] = useState(0)
   const [uploadTargetFileIds, setUploadTargetFileIds] = useState<string[]>([])
+  const [cutoffDate, setCutoffDate] = useState<Date>()
+  const [batchMtCutoffEnabled, setBatchMtCutoffEnabled] = useState(false)
 
   const selectedFiles = files.filter(file => selectedFileIds.includes(file.id))
+
+  const handleBatchMtCutoffEnabledChange = (enabled: boolean) => {
+    setBatchMtCutoffEnabled(enabled)
+    if (!enabled) setCutoffDate(undefined)
+  }
+
+  const appendCutoffDateIfApplicable = (formData: FormData, primaryOperationId: string) => {
+    const ops = queuedOperations.length > 0 ? queuedOperations : [primaryOperationId]
+    const cutoffRaw = cutoffDate ? format(cutoffDate, "yyyy-MM-dd") : null
+    if (!cutoffRaw) return
+
+    const needsMandatoryCutoff = ops.some(
+      (op) => op === "remove_old" || op === "find_date_duplicates",
+    )
+    if (needsMandatoryCutoff) {
+      formData.append("cutoff_date", cutoffRaw)
+      return
+    }
+
+    if (ops.some((op) => op === "batch_process_mt") && batchMtCutoffEnabled) {
+      formData.append("use_batch_mt_cutoff", "1")
+      formData.append("cutoff_date", cutoffRaw)
+    }
+  }
 
   const handleFilesAdded = (
     newFiles: File[],
@@ -263,6 +290,7 @@ export function TMXWorkspace() {
         } else {
           formData.append('operation', operationId)
         }
+        appendCutoffDateIfApplicable(formData, operationId)
         console.log(`Sending merge_tmx request to /api/${operationId}`, {
           operations: queuedOperations.length > 0 ? queuedOperations : [operationId],
           files: selectedFileIds.map(id => files.find(f => f.id === id)?.name)
@@ -359,6 +387,7 @@ export function TMXWorkspace() {
         if (operationId === 'split_size' && size) {
           formData.append('size', size.toString())
         }
+        appendCutoffDateIfApplicable(formData, operationId)
         console.log(`Sending request to /api/${operationId}`, {
           operations: queuedOperations.length > 0 ? queuedOperations : [operationId],
           file: file.name,
@@ -603,6 +632,7 @@ export function TMXWorkspace() {
         const formData = new FormData()
         formData.append('file', file.originalData)
         formData.append('operations', JSON.stringify(queuedOperations))
+        appendCutoffDateIfApplicable(formData, queuedOperations[0] ?? "")
 
         console.log(`Sending queue request to /queue/`, {
           operations: queuedOperations,
@@ -799,6 +829,15 @@ export function TMXWorkspace() {
     await runUploadWithModal([fileId])
   }
 
+  const queueNeedsMandatoryCutoff =
+    (queuedOperations.includes("remove_old") || queuedOperations.includes("find_date_duplicates")) &&
+    !cutoffDate
+
+  const queueBatchCutoffIncomplete =
+    queuedOperations.includes("batch_process_mt") &&
+    batchMtCutoffEnabled &&
+    !cutoffDate
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2 space-y-6">
@@ -830,6 +869,10 @@ export function TMXWorkspace() {
             queuedOperations={queuedOperations}
             onQueueUpdate={setQueuedOperations}
             onClearSelection={() => setSelectedFileIds([])}
+            cutoffDate={cutoffDate}
+            onCutoffDateChange={setCutoffDate}
+            batchMtCutoffEnabled={batchMtCutoffEnabled}
+            onBatchMtCutoffEnabledChange={handleBatchMtCutoffEnabledChange}
           />
         )}
       </div>
@@ -959,7 +1002,9 @@ export function TMXWorkspace() {
             </div>
             <Button
               onClick={handleProcessQueue}
-              disabled={isProcessing}
+              disabled={
+                isProcessing || queueNeedsMandatoryCutoff || queueBatchCutoffIncomplete
+              }
               className="w-full mt-4"
             >
               {isProcessing ? (

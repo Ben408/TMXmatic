@@ -116,6 +116,17 @@
                 </select>
                 
                 <div id="fileInfo" class="file-info" style="display: none;"></div>
+
+                <div id="batchMtCutoffWrap" style="display: none; margin: 10px 0;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" name="use_batch_mt_cutoff" id="use_batch_mt_cutoff" value="1" disabled onchange="syncBatchMtCutoffFields()">
+                        <span>Remove TUs older than cutoff (after batch clean)</span>
+                    </label>
+                    <div id="batchMtDateWrap" style="display: none; margin-top: 8px;">
+                        <label for="cutoff_date" style="display: block; color: #666; font-size: 0.9em; margin-bottom: 4px;">Cutoff date</label>
+                        <input type="date" name="cutoff_date" id="cutoff_date" style="max-width: 200px;">
+                    </div>
+                </div>
                 
                 <input type="file" name="file" id="fileInput" onchange="validateFile()" multiple>
                 <div id="errorMessage" class="error-message"></div>
@@ -181,9 +192,20 @@
             },
             'batch_process_mt': {
                 extensions: ['.tmx'],
-                description: 'Batch process: TMS cleaning plus MT-specific cleaning'
+                description: 'Batch process: empty targets, duplicates, sentence filter; optional cutoff (old TUs); final clean_for_mt pass → mt_*.tmx'
             }
         };
+
+        function syncBatchMtCutoffFields() {
+            const operation = document.getElementById('operation').value;
+            const cb = document.getElementById('use_batch_mt_cutoff');
+            const dateWrap = document.getElementById('batchMtDateWrap');
+            const cutoffInput = document.getElementById('cutoff_date');
+            if (operation !== 'batch_process_mt' || !cb || !cutoffInput) return;
+            const on = cb.checked;
+            if (dateWrap) dateWrap.style.display = on ? 'block' : 'none';
+            if (!on) cutoffInput.value = '';
+        }
 
         function updateFileInfo() {
             
@@ -191,6 +213,24 @@
             const fileInfo = document.getElementById('fileInfo');
             const split_size = document.getElementById('size');
             const split_text = document.getElementById('size_text')
+            const batchMtCutoffWrap = document.getElementById('batchMtCutoffWrap');
+            const useCutoffCb = document.getElementById('use_batch_mt_cutoff');
+
+            const cutoffInput = document.getElementById('cutoff_date');
+            if (operation === 'batch_process_mt' && batchMtCutoffWrap) {
+                batchMtCutoffWrap.style.display = 'block';
+                if (useCutoffCb) useCutoffCb.disabled = false;
+                syncBatchMtCutoffFields();
+            } else if (batchMtCutoffWrap) {
+                batchMtCutoffWrap.style.display = 'none';
+                if (useCutoffCb) {
+                    useCutoffCb.checked = false;
+                    useCutoffCb.disabled = true;
+                }
+                const dateWrap = document.getElementById('batchMtDateWrap');
+                if (dateWrap) dateWrap.style.display = 'none';
+                if (cutoffInput) cutoffInput.value = '';
+            }
 
             if (operation == 'split_size'){
                 split_size.style.display = 'block';

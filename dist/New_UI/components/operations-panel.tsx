@@ -3,16 +3,14 @@
 import { WorkspaceFile, Operation } from "./tmx-workspace"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useId } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Loader2, GripVertical, Trash2, ArrowUp, ArrowDown, Calendar } from "lucide-react"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Calendar as CalendarIcon } from "lucide-react"
+import { Loader2 } from "lucide-react"
 import { format } from "date-fns"
-import { Calendar as CalendarComponent } from "@/components/ui/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,15 +22,84 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 
+function parseIsoDateToLocal(iso: string): Date | undefined {
+  const [y, m, d] = iso.split("-").map((n) => parseInt(n, 10))
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return undefined
+  return new Date(y, m - 1, d)
+}
+
+/** Native date input (browser picker + keyboard). Optional toggle for batch MT only. */
+function CutoffDateControl({
+  selectedDate,
+  setSelectedDate,
+  optionalCutoffToggle,
+  optionalCutoffEnabled,
+  onOptionalCutoffEnabledChange,
+}: {
+  selectedDate?: Date
+  setSelectedDate: (date?: Date) => void
+  optionalCutoffToggle?: boolean
+  optionalCutoffEnabled?: boolean
+  onOptionalCutoffEnabledChange?: (enabled: boolean) => void
+}) {
+  const toggleId = useId()
+  const showDateInput =
+    !optionalCutoffToggle || (optionalCutoffToggle && optionalCutoffEnabled)
+
+  return (
+    <div className="flex flex-col items-end gap-2">
+      {optionalCutoffToggle && onOptionalCutoffEnabledChange ? (
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id={toggleId}
+            checked={optionalCutoffEnabled}
+            onCheckedChange={(v) => onOptionalCutoffEnabledChange(v === true)}
+          />
+          <Label
+            htmlFor={toggleId}
+            className="text-sm font-normal cursor-pointer max-w-[240px] text-right leading-snug"
+          >
+            Remove TUs older than cutoff (after batch clean)
+          </Label>
+        </div>
+      ) : null}
+      {showDateInput ? (
+        <Input
+          type="date"
+          value={selectedDate ? format(selectedDate, "yyyy-MM-dd") : ""}
+          onChange={(e) => {
+            const v = e.target.value
+            if (!v) setSelectedDate(undefined)
+            else {
+              const parsed = parseIsoDateToLocal(v)
+              if (parsed) setSelectedDate(parsed)
+            }
+          }}
+          className="w-[155px] font-mono text-sm"
+        />
+      ) : null}
+      {optionalCutoffToggle && !optionalCutoffEnabled ? (
+        <span className="text-xs text-muted-foreground max-w-[260px] text-right">
+          Check the option above to enter a cutoff date.
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
 export interface OperationsPanelProps {
   files: WorkspaceFile[]
   operations: Operation[]
-  onProcess: (operationId: string, size?: number, date?: Date) => Promise<void>
+  onProcess: (operationId: string, size?: number) => Promise<void>
   allFiles: WorkspaceFile[]
   onFileUpdate: (fileId: string, updates: Partial<WorkspaceFile>) => void
   queuedOperations: string[]
   onQueueUpdate: (operations: string[]) => void
   onClearSelection?: () => void
+  cutoffDate?: Date
+  onCutoffDateChange: (date?: Date) => void
+  batchMtCutoffEnabled: boolean
+  onBatchMtCutoffEnabledChange: (enabled: boolean) => void
 }
 
 export function OperationsPanel({
@@ -44,12 +111,15 @@ export function OperationsPanel({
   queuedOperations,
   onQueueUpdate,
   onClearSelection,
+  cutoffDate,
+  onCutoffDateChange,
+  batchMtCutoffEnabled,
+  onBatchMtCutoffEnabledChange,
 }: OperationsPanelProps) {
   const [fileTypeTab, setFileTypeTab] = useState("tmx")
   const [activeTab, setActiveTab] = useState("all")
   const [splitSize, setSplitSize] = useState<number>(1000)
   const [selectedOperations, setSelectedOperations] = useState<string[]>([])
-  const [selectedDate, setSelectedDate] = useState<Date>()
   const [showWarningDialog, setShowWarningDialog] = useState(false)
   const [userConfirmed, setUserConfirmed] = useState(false)
   const isProcessing = files.length > 0 && files[0].status === "processing"
@@ -200,27 +270,27 @@ export function OperationsPanel({
       </TabsList>
 
       <TabsContent value="all" className="space-y-4">
-        <OperationsList operations={ops} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
+        <OperationsList operations={ops} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={cutoffDate} setSelectedDate={onCutoffDateChange} batchMtCutoffEnabled={batchMtCutoffEnabled} onBatchMtCutoffEnabledChange={onBatchMtCutoffEnabledChange} />
       </TabsContent>
 
       <TabsContent value="conversion" className="space-y-4">
-        <OperationsList operations={conversionOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
+        <OperationsList operations={conversionOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={cutoffDate} setSelectedDate={onCutoffDateChange} batchMtCutoffEnabled={batchMtCutoffEnabled} onBatchMtCutoffEnabledChange={onBatchMtCutoffEnabledChange} />
       </TabsContent>
 
       <TabsContent value="cleaning" className="space-y-4">
-        <OperationsList operations={cleaningOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
+        <OperationsList operations={cleaningOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={cutoffDate} setSelectedDate={onCutoffDateChange} batchMtCutoffEnabled={batchMtCutoffEnabled} onBatchMtCutoffEnabledChange={onBatchMtCutoffEnabledChange} />
       </TabsContent>
 
       <TabsContent value="analysis" className="space-y-4">
-        <OperationsList operations={analysisOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
+        <OperationsList operations={analysisOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={cutoffDate} setSelectedDate={onCutoffDateChange} batchMtCutoffEnabled={batchMtCutoffEnabled} onBatchMtCutoffEnabledChange={onBatchMtCutoffEnabledChange} />
       </TabsContent>
 
       <TabsContent value="splitting" className="space-y-4">
-        <OperationsList operations={splitOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
+        <OperationsList operations={splitOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={cutoffDate} setSelectedDate={onCutoffDateChange} batchMtCutoffEnabled={batchMtCutoffEnabled} onBatchMtCutoffEnabledChange={onBatchMtCutoffEnabledChange} />
       </TabsContent>
 
       <TabsContent value="batch" className="space-y-4">
-        <OperationsList operations={batchOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
+        <OperationsList operations={batchOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={cutoffDate} setSelectedDate={onCutoffDateChange} batchMtCutoffEnabled={batchMtCutoffEnabled} onBatchMtCutoffEnabledChange={onBatchMtCutoffEnabledChange} />
       </TabsContent>
 
       <TabsContent value="custom" className="space-y-4">
@@ -248,31 +318,14 @@ export function OperationsPanel({
                   <span className="text-sm text-muted-foreground">segments</span>
                 </div>
               )}
-              {(operation.id === "remove_old" || operation.id === "find_date_duplicates") && (
-                <div className="flex items-center gap-2">
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant={"outline"}
-                        className={cn(
-                          "w-[200px] justify-start text-left font-normal",
-                          !selectedDate && "text-muted-foreground"
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {selectedDate ? format(selectedDate, "PPP") : <span>Pick a date</span>}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <CalendarComponent
-                        mode="single"
-                        selected={selectedDate}
-                        onSelect={setSelectedDate}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
+              {(operation.id === "remove_old" || operation.id === "find_date_duplicates" || operation.id === "batch_process_mt") && (
+                <CutoffDateControl
+                  selectedDate={cutoffDate}
+                  setSelectedDate={onCutoffDateChange}
+                  optionalCutoffToggle={operation.id === "batch_process_mt"}
+                  optionalCutoffEnabled={batchMtCutoffEnabled}
+                  onOptionalCutoffEnabledChange={onBatchMtCutoffEnabledChange}
+                />
               )}
               <Button
                 variant="outline"
@@ -430,15 +483,19 @@ function OperationsList({
   setSplitSize,
   selectedDate,
   setSelectedDate,
+  batchMtCutoffEnabled,
+  onBatchMtCutoffEnabledChange,
 }: {
   operations: Operation[]
-  onProcess: (operationId: string, size?: number, date?: Date) => Promise<void>
+  onProcess: (operationId: string, size?: number) => Promise<void>
   isProcessing: boolean
   files: WorkspaceFile[]
   splitSize: number
   setSplitSize: (size: number) => void
   selectedDate?: Date
   setSelectedDate: (date?: Date) => void
+  batchMtCutoffEnabled: boolean
+  onBatchMtCutoffEnabledChange: (enabled: boolean) => void
 }) {
   return (
     <div className="space-y-4">
@@ -460,39 +517,28 @@ function OperationsList({
               <span className="text-sm text-muted-foreground">segments</span>
             </div>
           )}
-          {(operation.id === "remove_old" || operation.id === "find_date_duplicates") && (
-            <div className="flex items-center gap-2">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant={"outline"}
-                    className={cn(
-                      "w-[200px] justify-start text-left font-normal",
-                      !selectedDate && "text-muted-foreground"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {selectedDate ? format(selectedDate, "PPP") : <span>Pick a date</span>}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <CalendarComponent
-                    mode="single"
-                    selected={selectedDate}
-                    onSelect={setSelectedDate}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
+          {(operation.id === "remove_old" || operation.id === "find_date_duplicates" || operation.id === "batch_process_mt") && (
+            <CutoffDateControl
+              selectedDate={selectedDate}
+              setSelectedDate={setSelectedDate}
+              optionalCutoffToggle={operation.id === "batch_process_mt"}
+              optionalCutoffEnabled={batchMtCutoffEnabled}
+              onOptionalCutoffEnabledChange={onBatchMtCutoffEnabledChange}
+            />
           )}
           <Button
-            onClick={() => onProcess(
-              operation.id,
-              operation.id === "split_size" ? splitSize : undefined,
-              (operation.id === "remove_old" || operation.id === "find_date_duplicates") ? selectedDate : undefined
-            )}
-            disabled={files.length === 0 || isProcessing || ((operation.id === "remove_old" || operation.id === "find_date_duplicates") && !selectedDate)}
+            onClick={() =>
+              onProcess(operation.id, operation.id === "split_size" ? splitSize : undefined)
+            }
+            disabled={
+              files.length === 0 ||
+              isProcessing ||
+              ((operation.id === "remove_old" || operation.id === "find_date_duplicates") &&
+                !selectedDate) ||
+              (operation.id === "batch_process_mt" &&
+                batchMtCutoffEnabled &&
+                !selectedDate)
+            }
           >
             {isProcessing ? (
               <>
@@ -546,7 +592,7 @@ function getOperationDescription(opId: string): string {
     case "batch_process_tms":
       return "Apply multiple cleaning operations for TMS compatibility."
     case "batch_process_mt":
-      return "Apply multiple cleaning operations for machine translation."
+      return "Batch clean, optional old-TU cutoff, then clean_for_mt (MT-ready mt_*.tmx plus removed_mt_*.tmx in the zip)."
     case "xliff_tmx_leverage":
       return "Leverage TMX into XLIFF"
     case "xliff_cleanup":

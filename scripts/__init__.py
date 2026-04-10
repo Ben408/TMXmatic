@@ -12,7 +12,12 @@ from .extract_translations import extract_translations
 from .count_creation_dates import count_creation_dates
 from .count_last_usage import count_last_usage_dates
 from .find_date_duplicates import process_file as find_date_duplicates
-from .clean_tmx_for_mt import clean_tmx_for_mt
+from .clean_tmx_for_mt import (
+    OperationLog,
+    clean_tmx_for_mt,
+    clean_tmx_for_mt_legacy,
+    process_directory,
+)
 
 __all__ = [
     'split_by_language',
@@ -31,5 +36,8 @@ __all__ = [
     'count_creation_dates',
     'count_last_usage_dates',
     'find_date_duplicates',
-    'clean_tmx_for_mt'
+    'clean_tmx_for_mt',
+    'clean_tmx_for_mt_legacy',
+    'OperationLog',
+    'process_directory',
 ] 

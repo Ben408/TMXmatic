@@ -216,6 +216,31 @@ def allowed_file(filename):
     ALLOWED_EXTENSIONS = {'tmx', 'csv', 'xlsx', 'xls', 'zip', 'tbx', 'xlf', 'xliff'}
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+
+def _collect_output_paths(result_obj):
+    """Flatten mixed operation outputs into file path strings."""
+    if isinstance(result_obj, str):
+        return [result_obj]
+    if isinstance(result_obj, (list, tuple)):
+        paths = []
+        for item in result_obj:
+            paths.extend(_collect_output_paths(item))
+        return paths
+    return []
+
+
+def _effective_cutoff_date(operation: str, form) -> str | None:
+    """Cutoff from form; batch_process_mt only applies it when use_batch_mt_cutoff is set."""
+    raw = (form.get('cutoff_date') or '').strip()
+    if not raw:
+        return None
+    if operation == 'batch_process_mt' and form.get('use_batch_mt_cutoff') != '1':
+        return None
+    if operation in ('remove_old', 'find_date_duplicates', 'batch_process_mt'):
+        return raw
+    return None
+
+
 def _xliff_roundtrip_sidecar_path(tmx_path: str) -> str:
     """JSON sidecar written when XLIFF is converted to TMX so processors can round-trip even if they strip TU props."""
     return os.path.splitext(tmx_path)[0] + '.xliff-origin.json'
@@ -470,10 +495,17 @@ def queue():
 
             for operation in operations:
                 result_list = None
+                effective_cutoff = _effective_cutoff_date(operation, data)
                 if result == None:
-                    result_list = process_file(operation, file_list[0])
+                    if effective_cutoff:
+                        result_list = process_file(operation, file_list[0], cutoff_date=effective_cutoff)
+                    else:
+                        result_list = process_file(operation, file_list[0])
                 else:
-                    result_list = process_file(operation, result)
+                    if effective_cutoff:
+                        result_list = process_file(operation, result, cutoff_date=effective_cutoff)
+                    else:
+                        result_list = process_file(operation, result)
                 if type(result_list) == tuple and len(result_list) > 1 :
                     result = result_list[0]
                     garbage.append(result_list[1])
@@ -485,33 +517,15 @@ def queue():
             result_list2 = [result]
             result_list2.extend(garbage)
 
-            result_list = tuple(result_list)
+            result_list = tuple(result_list2)
             memory_file = io.BytesIO()
             
             with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-                    if operation in ('convert_vatv','clean_mt','merge_tmx'):
-                        if type(result_list) == str:
-                            # Convert TMX back to XLIFF if it was originally XLIFF
-                            file_to_add = convert_tmx_to_xliff_if_needed(result_list)
-                            zf.write(file_to_add, os.path.basename(file_to_add))
-                        else:
-                            file_path = result_list[0]
-                            # Convert TMX back to XLIFF if it was originally XLIFF
-                            file_to_add = convert_tmx_to_xliff_if_needed(file_path)
-                            zf.write(file_to_add, os.path.basename(file_to_add))
-                    else:
-                        for result in result_list:
-                            if len(result) > 2:
-                                if os.path.exists(result):
-                                    # Convert TMX back to XLIFF if it was originally XLIFF
-                                    file_to_add = convert_tmx_to_xliff_if_needed(result)
-                                    zf.write(file_to_add, os.path.basename(file_to_add))
-                            else:
-                                for tm in result:
-                                    if os.path.exists(tm):
-                                        # Convert TMX back to XLIFF if it was originally XLIFF
-                                        file_to_add = convert_tmx_to_xliff_if_needed(tm)
-                                        zf.write(file_to_add, os.path.basename(file_to_add))
+                for file_path in _collect_output_paths(result_list):
+                    if os.path.exists(file_path):
+                        # Convert TMX back to XLIFF if it was originally XLIFF
+                        file_to_add = convert_tmx_to_xliff_if_needed(file_path)
+                        zf.write(file_to_add, os.path.basename(file_to_add))
 
 
 
@@ -607,10 +621,9 @@ def index():
                     else:
                         result_list = []
                         for file in file_list:
-                            # Get cutoff_date if available
-                            cutoff_date = request.form.get('cutoff_date')
-                            if cutoff_date and operation in ['remove_old', 'find_date_duplicates']:
-                                result = process_file(operation, file, cutoff_date=cutoff_date)
+                            effective_cutoff = _effective_cutoff_date(operation, request.form)
+                            if effective_cutoff:
+                                result = process_file(operation, file, cutoff_date=effective_cutoff)
                             else:
                                 result = process_file(operation, file)
                             result_list.append(result)         
@@ -620,10 +633,9 @@ def index():
                     elif operation == 'split_language':
                         result_list = split_by_language(file_list[0])
                     else:
-                        # Get cutoff_date if available
-                        cutoff_date = request.form.get('cutoff_date')
-                        if cutoff_date and operation in ['remove_old', 'find_date_duplicates']:
-                            result_list = process_file(operation, file_list[0], cutoff_date=cutoff_date)
+                        effective_cutoff = _effective_cutoff_date(operation, request.form)
+                        if effective_cutoff:
+                            result_list = process_file(operation, file_list[0], cutoff_date=effective_cutoff)
                         else:
                             result_list = process_file(operation, file_list[0])
                         
@@ -633,30 +645,11 @@ def index():
 
                 memory_file = io.BytesIO()
                 with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-                    if operation in ('convert_vatv','clean_mt','merge_tmx'):
-                        if type(result_list) == str:
-                            # Convert TMX back to XLIFF if it was originally XLIFF
-                            file_to_add = convert_tmx_to_xliff_if_needed(result_list)
-                            zf.write(file_to_add, os.path.basename(file_to_add))
-                        else:
-                            file_path = result_list[0]
+                    for file_path in _collect_output_paths(result_list):
+                        if os.path.exists(file_path):
                             # Convert TMX back to XLIFF if it was originally XLIFF
                             file_to_add = convert_tmx_to_xliff_if_needed(file_path)
                             zf.write(file_to_add, os.path.basename(file_to_add))
-                    else:
-                        print(result_list)
-                        for result in result_list:
-                            if len(result) > 2:
-                                if os.path.exists(result):
-                                    # Convert TMX back to XLIFF if it was originally XLIFF
-                                    file_to_add = convert_tmx_to_xliff_if_needed(result)
-                                    zf.write(file_to_add, os.path.basename(file_to_add))
-                            else:
-                                for tm in result:
-                                    if os.path.exists(tm):
-                                        # Convert TMX back to XLIFF if it was originally XLIFF
-                                        file_to_add = convert_tmx_to_xliff_if_needed(tm)
-                                        zf.write(file_to_add, os.path.basename(file_to_add))
 
                 memory_file.seek(0)
                 # Handle different result types
@@ -722,6 +715,8 @@ def process_file(operation: str, filepath: str, **kwargs) -> str:
         if operation == 'remove_old' and 'cutoff_date' in kwargs:
             result = OPERATIONS[operation](filepath, kwargs['cutoff_date'])
         elif operation == 'find_date_duplicates' and 'cutoff_date' in kwargs:
+            result = OPERATIONS[operation](filepath, kwargs['cutoff_date'])
+        elif operation == 'batch_process_mt' and kwargs.get('cutoff_date'):
             result = OPERATIONS[operation](filepath, kwargs['cutoff_date'])
         else:
             result = OPERATIONS[operation](filepath)
