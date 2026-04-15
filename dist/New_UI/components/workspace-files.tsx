@@ -6,13 +6,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Download, Trash2, CheckCircle, Clock, AlertCircle, FileIcon } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { DownloadFormat, getFileTypeLabel, isTmxOrXliffFile } from "@/lib/download-utils"
 
 export interface WorkspaceFilesProps {
   files: WorkspaceFile[]
   selectedFileIds: string[]
   onSelectFile: (fileId: string, multiSelect?: boolean) => void
   onRemoveFile: (id: string) => void
-  onDownloadFile: (fileId: string) => Promise<void>
+  onDownloadFile: (fileId: string, format: DownloadFormat) => Promise<void>
 }
 
 export function WorkspaceFiles({
@@ -96,19 +103,44 @@ export function WorkspaceFiles({
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    {file.processedData && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={async (e) => {
-                          e.stopPropagation()
-                          await onDownloadFile(file.id)
-                        }}
-                        title="Download processed file"
-                      >
-                        <Download className="h-4 w-4" />
-                      </Button>
-                    )}
+                    {file.processedData &&
+                      (isTmxOrXliffFile(file.name) ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => e.stopPropagation()}
+                              title="Download file"
+                            >
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenuItem onClick={() => onDownloadFile(file.id, "tmx")}>
+                              Download as TMX
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => onDownloadFile(file.id, "xliff")}>
+                              Download as XLIFF
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => onDownloadFile(file.id, "source")}>
+                              Download as Source
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={async (e) => {
+                            e.stopPropagation()
+                            await onDownloadFile(file.id, "source")
+                          }}
+                          title="Download processed file"
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                      ))}
                     <Button
                       variant="ghost"
                       size="icon"
@@ -146,38 +178,5 @@ export function WorkspaceFiles({
       </CardContent>
     </Card>
   )
-}
-
-function getFileTypeLabel(filename: string): string {
-  const extension = filename.split(".").pop()?.toLowerCase()
-  switch (extension) {
-    case "tmx":
-      return "TMX File"
-    case "xlsx":
-    case "xls":
-      return "Excel File"
-    case "xliff":
-    case "xlf":
-      return "XLIFF File"
-    case "csv":
-      return "CSV File"
-    default:
-      return extension ? `${extension.toUpperCase()} File` : "Unknown File"
-  }
-}
-
-function StatusIcon({ status }: { status: WorkspaceFile["status"] }) {
-  switch (status) {
-    case "idle":
-      return <Clock className="h-5 w-5 text-muted-foreground" />
-    case "processing":
-      return <Clock className="h-5 w-5 text-amber-500 animate-pulse" />
-    case "processed":
-      return <CheckCircle className="h-5 w-5 text-green-500" />
-    case "error":
-      return <AlertCircle className="h-5 w-5 text-red-500" />
-    default:
-      return null
-  }
 }
 

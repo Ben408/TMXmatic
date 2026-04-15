@@ -18,6 +18,19 @@ from .tmx_utils import (
 
 logger = logging.getLogger(__name__)
 
+_FULL_MRK_WRAPPER_RE = re.compile(r'^\s*<mrk\b[^>]*>(.*?)</mrk>\s*$', re.IGNORECASE | re.DOTALL)
+
+
+def _unwrap_full_mrk_wrapper(text: str) -> str:
+    """
+    If a segment is fully wrapped by a single <mrk ...>...</mrk>, unwrap it and keep inner text.
+    Otherwise, return text unchanged.
+    """
+    match = _FULL_MRK_WRAPPER_RE.match(text or "")
+    if not match:
+        return text
+    return match.group(1)
+
 
 class OperationLog:
     def __init__(self):
@@ -178,7 +191,10 @@ def clean_tmx_for_mt(file_path: str) -> tuple[str, str]:
                     seg_elem = seg_elems[0] if seg_elems else None
                     if seg_elem is not None:
                         tuv = PythonTmx.Tuv(lang=lang)
-                        tuv.content = element_inner_text(seg_elem)
+                        seg_text = element_inner_text(seg_elem)
+                        if isinstance(seg_text, str):
+                            seg_text = _unwrap_full_mrk_wrapper(seg_text)
+                        tuv.content = seg_text
                         tu.tuvs.append(tuv)
                 append_tu_props_from_element(tu_elem, tu)
                 if len(tu.tuvs) >= 2:  # Only add TUs with both source and target

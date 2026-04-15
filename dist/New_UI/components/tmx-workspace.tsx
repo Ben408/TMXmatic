@@ -22,12 +22,20 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { ArrowUp, ArrowDown, Trash2 } from "lucide-react"
 import { Loader2 } from "lucide-react"
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import JSZip from "jszip"
+import {
+  DownloadFormat,
+  getFileExtension,
+  getFileTypeLabel,
+  isTmxOrXliffFile,
+  isZipBytes,
+  preferredExtensionsForFormat,
+} from "@/lib/download-utils"
 
 export type XLIFFStats = {
   translations_found?: number
@@ -131,7 +139,7 @@ export const OPERATIONS: Operation[] = [
   { 
     id: "batch_process_mt", 
     name: "Batch Clean TMX for MT",
-    description: "Batch clean (empty targets, duplicates, sentence filter), optional old-TU cutoff, then clean_for_mt for MT training output."
+    description: "Here you can select the MT cleaning steps you want to apply to the TMX files."
   },
   { 
     id: "xliff_tmx_leverage", 
@@ -169,14 +177,14 @@ export function TMXWorkspace() {
   const [uploadedCount, setUploadedCount] = useState(0)
   const [uploadTargetFileIds, setUploadTargetFileIds] = useState<string[]>([])
   const [cutoffDate, setCutoffDate] = useState<Date>()
-  const [batchMtCutoffEnabled, setBatchMtCutoffEnabled] = useState(false)
+  const [batchMtSelectedSteps, setBatchMtSelectedSteps] = useState<string[]>([
+    "remove_empty",
+    "find_duplicates",
+    "non_true_duplicates",
+    "remove_sentence",
+  ])
 
   const selectedFiles = files.filter(file => selectedFileIds.includes(file.id))
-
-  const handleBatchMtCutoffEnabledChange = (enabled: boolean) => {
-    setBatchMtCutoffEnabled(enabled)
-    if (!enabled) setCutoffDate(undefined)
-  }
 
   const appendCutoffDateIfApplicable = (formData: FormData, primaryOperationId: string) => {
     const ops = queuedOperations.length > 0 ? queuedOperations : [primaryOperationId]
@@ -191,10 +199,16 @@ export function TMXWorkspace() {
       return
     }
 
-    if (ops.some((op) => op === "batch_process_mt") && batchMtCutoffEnabled) {
+    if (ops.some((op) => op === "batch_process_mt") && batchMtSelectedSteps.includes("remove_old")) {
       formData.append("use_batch_mt_cutoff", "1")
       formData.append("cutoff_date", cutoffRaw)
     }
+  }
+
+  const appendBatchMtOptionsIfApplicable = (formData: FormData, primaryOperationId: string) => {
+    const ops = queuedOperations.length > 0 ? queuedOperations : [primaryOperationId]
+    if (!ops.includes("batch_process_mt")) return
+    formData.append("batch_mt_steps", JSON.stringify(batchMtSelectedSteps))
   }
 
   const handleFilesAdded = (
@@ -291,6 +305,7 @@ export function TMXWorkspace() {
           formData.append('operation', operationId)
         }
         appendCutoffDateIfApplicable(formData, operationId)
+        appendBatchMtOptionsIfApplicable(formData, operationId)
         console.log(`Sending merge_tmx request to /api/${operationId}`, {
           operations: queuedOperations.length > 0 ? queuedOperations : [operationId],
           files: selectedFileIds.map(id => files.find(f => f.id === id)?.name)
@@ -388,6 +403,7 @@ export function TMXWorkspace() {
           formData.append('size', size.toString())
         }
         appendCutoffDateIfApplicable(formData, operationId)
+        appendBatchMtOptionsIfApplicable(formData, operationId)
         console.log(`Sending request to /api/${operationId}`, {
           operations: queuedOperations.length > 0 ? queuedOperations : [operationId],
           file: file.name,
@@ -507,93 +523,154 @@ export function TMXWorkspace() {
     }
   }
 
-  const handleDownloadFile = async (fileId: string) => {
+  const triggerBlobDownload = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const extractPreferredFromZip = async (
+    zipBlob: Blob,
+    preferredExts: string[],
+  ): Promise<{ blob: Blob; filename: string } | null> => {
+    const zip = await JSZip.loadAsync(zipBlob)
+    const entries = Object.keys(zip.files).filter((name) => !zip.files[name]?.dir)
+    const preferred = entries.find((name) =>
+      preferredExts.some((ext) => name.toLowerCase().endsWith(ext)),
+    )
+    if (!preferred) return null
+    const content = await zip.files[preferred].async("blob")
+    return { blob: content, filename: preferred.split("/").pop() || preferred }
+  }
+
+  const handleDownloadFile = async (fileId: string, format: DownloadFormat = "source") => {
     const file = files.find((f) => f.id === fileId)
-    if (!file || !file.processedData) return
+    if (!file) return
+
+    if (format === "source") {
+      // Keep legacy behavior for non-TMX/XLIFF files: download processed output when available.
+      if (!isTmxOrXliffFile(file.name) && file.processedData) {
+        const arrayBuffer = await file.processedData.arrayBuffer()
+        const uint8Array = new Uint8Array(arrayBuffer)
+        const isZipFile = isZipBytes(uint8Array)
+        if (isZipFile) {
+          const baseName = file.name.replace(/\.[^/.]+$/, "")
+          triggerBlobDownload(file.processedData, `${baseName}_processed.zip`)
+        } else {
+          triggerBlobDownload(file.processedData, file.name)
+        }
+      } else {
+        triggerBlobDownload(file.originalData, file.name)
+      }
+      toast({
+        title: "File downloaded",
+        description: `Downloaded file ${file.name}`,
+      })
+      return
+    }
+
+    if (!file.processedData) return
 
     // Check if the processed data is actually a ZIP file by examining the first few bytes
     const arrayBuffer = await file.processedData.arrayBuffer()
     const uint8Array = new Uint8Array(arrayBuffer)
     
     // ZIP files start with PK\x03\x04 (0x504B0304)
-    const isZipFile = uint8Array.length >= 4 && 
-                     uint8Array[0] === 0x50 && 
-                     uint8Array[1] === 0x4B && 
-                     uint8Array[2] === 0x03 && 
-                     uint8Array[3] === 0x04
+    const isZipFile = isZipBytes(uint8Array)
 
-    // Create download URL from the processed file data
-    const url = URL.createObjectURL(file.processedData)
-    const a = document.createElement("a")
-    a.href = url
-    
-    // Set appropriate filename and extension based on content type
     if (isZipFile) {
-      // Extract base name without extension and add .zip
+      const preferredExts = preferredExtensionsForFormat(format)
+      const extracted = await extractPreferredFromZip(file.processedData, preferredExts)
+      if (extracted) {
+        triggerBlobDownload(extracted.blob, extracted.filename)
+        toast({
+          title: "File downloaded",
+          description: `Downloaded ${format.toUpperCase()} file from processed archive of ${file.name}`,
+        })
+        return
+      }
       const baseName = file.name.replace(/\.[^/.]+$/, "")
-      a.download = `${baseName}_processed.zip`
+      triggerBlobDownload(file.processedData, `${baseName}_processed.zip`)
+      toast({
+        title: "Format not found in archive",
+        description: `No ${format.toUpperCase()} file found in archive. Downloaded full ZIP instead.`,
+      })
     } else {
-      a.download = file.name
+      const desiredExt = format === "tmx" ? ".tmx" : ".xlf"
+      const currentExt = `.${getFileExtension(file.name)}`
+      if (format === "tmx" && currentExt !== ".tmx") {
+        toast({
+          title: "Download unavailable",
+          description: "Processed output is not a TMX file.",
+          variant: "destructive",
+        })
+        return
+      }
+      if (format === "xliff" && currentExt !== ".xlf" && currentExt !== ".xliff") {
+        toast({
+          title: "Download unavailable",
+          description: "Processed output is not an XLIFF file.",
+          variant: "destructive",
+        })
+        return
+      }
+      const outName =
+        currentExt === desiredExt || (format === "xliff" && currentExt === ".xliff")
+          ? file.name
+          : `${file.name.replace(/\.[^/.]+$/, "")}${desiredExt}`
+      triggerBlobDownload(file.processedData, outName)
+      toast({
+        title: "File downloaded",
+        description: `Downloaded ${format.toUpperCase()} output for ${file.name}`,
+      })
     }
-    
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-
-    toast({
-      title: "File downloaded",
-      description: isZipFile 
-        ? `Downloaded ZIP archive containing processed files from ${file.name}`
-        : `Downloaded processed version of ${file.name}`,
-    })
   }
 
-  const handleBulkDownload = async () => {
-    const processedFiles = files.filter(file => file.processedData)
-    if (processedFiles.length === 0) return
+  const handleBulkDownload = async (format: DownloadFormat = "source") => {
+    const targetFiles = format === "source" ? files : files.filter(file => file.processedData)
+    if (targetFiles.length === 0) return
 
     const zip = new JSZip()
-    for (const file of processedFiles) {
-      if (file.processedData) {
-        zip.file(file.name.replace(".tmx",".zip"), file.processedData)
+    for (const file of targetFiles) {
+      if (format === "source") {
+        zip.file(file.name, file.originalData)
+        continue
+      }
+      if (!file.processedData) continue
+      const arrayBuffer = await file.processedData.arrayBuffer()
+      const uint8Array = new Uint8Array(arrayBuffer)
+      const isZipFile = isZipBytes(uint8Array)
+
+      if (isZipFile) {
+        const preferredExts = preferredExtensionsForFormat(format)
+        const extracted = await extractPreferredFromZip(file.processedData, preferredExts)
+        if (extracted) {
+          zip.file(extracted.filename, extracted.blob)
+        } else {
+          zip.file(`${file.name.replace(/\.[^/.]+$/, "")}_processed.zip`, file.processedData)
+        }
+      } else {
+        const ext = `.${getFileExtension(file.name)}`
+        if (format === "tmx" && ext === ".tmx") {
+          zip.file(file.name, file.processedData)
+        }
+        if (format === "xliff" && (ext === ".xlf" || ext === ".xliff")) {
+          zip.file(file.name, file.processedData)
+        }
       }
     }
     const content = await zip.generateAsync({ type: "blob" })
-    const url = URL.createObjectURL(content)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = "processed_files.zip"
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    triggerBlobDownload(content, `download_${format}.zip`)
 
     toast({
       title: "Files downloaded",
-      description: `Downloaded ${processedFiles.length} processed file(s)`,
+      description: `Downloaded ${targetFiles.length} file(s) as ${format.toUpperCase()}.`,
     })
-  }
-
-  const handleDownloadAll = async () => {
-    const zip = new JSZip()
-    for (const file of files) {
-      if (file.processedData) {
-        zip.file(file.name, file.processedData)
-      } else if (file.data) {
-        zip.file(file.name, file.data)
-      }
-    }
-    
-    const content = await zip.generateAsync({ type: "blob" })
-    const url = URL.createObjectURL(content)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = "all_files.zip"
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
   }
 
   const handleMoveOperation = (index: number, direction: 'up' | 'down') => {
@@ -633,6 +710,7 @@ export function TMXWorkspace() {
         formData.append('file', file.originalData)
         formData.append('operations', JSON.stringify(queuedOperations))
         appendCutoffDateIfApplicable(formData, queuedOperations[0] ?? "")
+        appendBatchMtOptionsIfApplicable(formData, queuedOperations[0] ?? "")
 
         console.log(`Sending queue request to /queue/`, {
           operations: queuedOperations,
@@ -739,11 +817,7 @@ export function TMXWorkspace() {
       // Check if processedData is a ZIP file
       const arrayBuffer = await file.processedData.arrayBuffer()
       const uint8Array = new Uint8Array(arrayBuffer)
-      const isZipFile = uint8Array.length >= 4 && 
-                       uint8Array[0] === 0x50 && 
-                       uint8Array[1] === 0x4B && 
-                       uint8Array[2] === 0x03 && 
-                       uint8Array[3] === 0x04
+      const isZipFile = isZipBytes(uint8Array)
 
       let fileToUpload = file.processedData
       let fileName = file.name
@@ -835,7 +909,7 @@ export function TMXWorkspace() {
 
   const queueBatchCutoffIncomplete =
     queuedOperations.includes("batch_process_mt") &&
-    batchMtCutoffEnabled &&
+    batchMtSelectedSteps.includes("remove_old") &&
     !cutoffDate
 
   return (
@@ -871,8 +945,8 @@ export function TMXWorkspace() {
             onClearSelection={() => setSelectedFileIds([])}
             cutoffDate={cutoffDate}
             onCutoffDateChange={setCutoffDate}
-            batchMtCutoffEnabled={batchMtCutoffEnabled}
-            onBatchMtCutoffEnabledChange={handleBatchMtCutoffEnabledChange}
+            batchMtSelectedSteps={batchMtSelectedSteps}
+            onBatchMtSelectedStepsChange={setBatchMtSelectedSteps}
           />
         )}
       </div>
@@ -886,13 +960,29 @@ export function TMXWorkspace() {
             <p>Operations applied: {files.reduce((acc, file) => acc + file.operations.length, 0)}</p>
             {files.some(file => file.processedData) && (
               <div className="flex gap-2 mt-4">
-                <Button
-                  className="flex-1"
-                  onClick={handleBulkDownload}
-                >
-                  <Download className="mr-2 h-4 w-4" />
-                  Download All
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button className="flex-1">
+                      <Download className="mr-2 h-4 w-4" />
+                      Download All
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem onClick={() => handleBulkDownload("source")}>
+                      Download as Source
+                    </DropdownMenuItem>
+                    {files.every((f) => isTmxOrXliffFile(f.name)) ? (
+                      <>
+                        <DropdownMenuItem onClick={() => handleBulkDownload("tmx")}>
+                          Download as TMX
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleBulkDownload("xliff")}>
+                          Download as XLIFF
+                        </DropdownMenuItem>
+                      </>
+                    ) : null}
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 {filesWithUpload.length > 0 && (
                   <Button
                     className="flex-1"
@@ -915,15 +1005,41 @@ export function TMXWorkspace() {
                       {(file.size / 1024).toFixed(2)} KB • {getFileTypeLabel(file.name)}
                     </p>
                     <div className="flex gap-2 mt-2">
-                      <Button
-                        className="flex-1"
-                        size="sm"
-                        onClick={() => handleDownloadFile(file.id)}
-                        disabled={!file.processedData}
-                      >
-                        <Download className="mr-1 h-3 w-3" />
-                        Download
-                      </Button>
+                      {isTmxOrXliffFile(file.name) ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              className="flex-1"
+                              size="sm"
+                              disabled={!file.processedData && !file.originalData}
+                            >
+                              <Download className="mr-1 h-3 w-3" />
+                              Download
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start">
+                            <DropdownMenuItem onClick={() => handleDownloadFile(file.id, "tmx")}>
+                              Download as TMX
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDownloadFile(file.id, "xliff")}>
+                              Download as XLIFF
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDownloadFile(file.id, "source")}>
+                              Download as Source
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : (
+                        <Button
+                          className="flex-1"
+                          size="sm"
+                          onClick={() => handleDownloadFile(file.id, "source")}
+                          disabled={!file.processedData}
+                        >
+                          <Download className="mr-1 h-3 w-3" />
+                          Download
+                        </Button>
+                      )}
                       {file.processedData && file.sourceProject && (
                         <Button
                           className="flex-1"
@@ -1062,21 +1178,4 @@ export function TMXWorkspace() {
   )
 }
 
-function getFileTypeLabel(filename: string): string {
-  const extension = filename.split(".").pop()?.toLowerCase()
-  switch (extension) {
-    case "tmx":
-      return "TMX File"
-    case "xlsx":
-    case "xls":
-      return "Excel File"
-    case "xliff":
-    case "xlf":
-      return "XLIFF File"
-    case "csv":
-      return "CSV File"
-    default:
-      return extension ? `${extension.toUpperCase()} File` : "Unknown File"
-  }
-}
 

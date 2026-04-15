@@ -176,17 +176,23 @@ def copy_element_without_prefix(elem, target_ns=None):
 def has_definition(concept_entry, ns):
     """Check if a concept entry has a definition."""
     # Try different namespace prefixes and definition paths
-    # First, try direct descrip elements at conceptEntry level
+    # First, try direct descrip elements at conceptEntry/termEntry level
     descrip_paths = []
     if ns:
         descrip_paths.append(f'.//{{{ns}}}descrip[@type="definition"]')
         descrip_paths.append(f'{{{ns}}}descrip[@type="definition"]')
+        descrip_paths.append(f'.//{{{ns}}}descrip[@type="conceptDefinition"]')
+        descrip_paths.append(f'{{{ns}}}descrip[@type="conceptDefinition"]')
     
     descrip_paths.extend([
         './/{urn:iso:std:iso:30042:ed-2}descrip[@type="definition"]',
+        './/{urn:iso:std:iso:30042:ed-2}descrip[@type="conceptDefinition"]',
         './/{http://www.lisa.org/TBX-Specification.3.0}descrip[@type="definition"]',
+        './/{http://www.lisa.org/TBX-Specification.3.0}descrip[@type="conceptDefinition"]',
         './/descrip[@type="definition"]',
+        './/descrip[@type="conceptDefinition"]',
         'descrip[@type="definition"]',
+        'descrip[@type="conceptDefinition"]',
     ])
     
     for descrip_path in descrip_paths:
@@ -212,7 +218,7 @@ def has_definition(concept_entry, ns):
     for descrip_path in all_descrip_paths:
         for descrip in concept_entry.findall(descrip_path):
             descrip_type = descrip.get('type')
-            if descrip_type and descrip_type.lower() == 'definition':
+            if descrip_type and descrip_type.lower() in ('definition', 'conceptdefinition'):
                 descrip_text = descrip.text
                 if descrip_text and descrip_text.strip():
                     return True
@@ -389,37 +395,49 @@ def process_tbx(input_file):
         
         print(f"Detected namespace: {ns if ns else 'None'}")
         
-        # Find all concept entries - try multiple approaches
+        # Find all concept/term entries - try multiple approaches
         concept_entries = []
+        entry_tag_candidates = ['conceptEntry', 'termEntry']
         
         # Method 1: With namespace
         if ns:
-            concept_entries = root.findall(f'.//{{{ns}}}conceptEntry')
-            if not concept_entries:
+            for entry_tag in entry_tag_candidates:
+                concept_entries = root.findall(f'.//{{{ns}}}{entry_tag}')
+                if concept_entries:
+                    break
                 # Try with body/text wrapper
                 body = root.find(f'.//{{{ns}}}body')
                 if body is not None:
-                    concept_entries = body.findall(f'.//{{{ns}}}conceptEntry')
+                    concept_entries = body.findall(f'.//{{{ns}}}{entry_tag}')
+                    if concept_entries:
+                        break
         
         # Method 2: Common namespace variants
         if not concept_entries:
             for test_ns in ['urn:iso:std:iso:30042:ed-2', 'http://www.lisa.org/TBX-Specification.3.0']:
-                concept_entries = root.findall(f'.//{{{test_ns}}}conceptEntry')
+                for entry_tag in entry_tag_candidates:
+                    concept_entries = root.findall(f'.//{{{test_ns}}}{entry_tag}')
+                    if concept_entries:
+                        ns = test_ns
+                        break
                 if concept_entries:
-                    ns = test_ns
                     break
         
         # Method 3: Without namespace (if no default namespace)
         if not concept_entries:
-            concept_entries = root.findall('.//conceptEntry')
-            # Also try in body
-            if not concept_entries:
+            for entry_tag in entry_tag_candidates:
+                concept_entries = root.findall(f'.//{entry_tag}')
+                if concept_entries:
+                    break
+                # Also try in body
                 body = root.find('.//body')
                 if body is not None:
-                    concept_entries = body.findall('.//conceptEntry')
+                    concept_entries = body.findall(f'.//{entry_tag}')
+                    if concept_entries:
+                        break
         
         if not concept_entries:
-            print("Error: Could not find any conceptEntry elements in the TBX file.")
+            print("Error: Could not find any conceptEntry or termEntry elements in the TBX file.")
             print(f"Root tag: {root.tag}")
             print(f"Root attributes: {root.attrib}")
             # Debug: print first few children

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Loader2, CheckCircle2, XCircle, Wifi, X } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
+import { useTheme } from "next-themes"
 import {
   Dialog,
   DialogContent,
@@ -28,6 +29,8 @@ interface ConnectionTestResult {
 }
 
 export function SettingsPage({ onBack }: SettingsPageProps) {
+  const { resolvedTheme, setTheme } = useTheme()
+  const [isMounted, setIsMounted] = useState(false)
   const [okapiEnabled, setOkapiEnabled] = useState(false)
   
   // Okapi settings
@@ -46,6 +49,10 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
   // Load settings on mount
   useEffect(() => {
     loadSettings()
+  }, [])
+
+  useEffect(() => {
+    setIsMounted(true)
   }, [])
 
   const loadSettings = async () => {
@@ -203,6 +210,25 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
       </div>
 
       <div className="space-y-6 max-w-4xl">
+        {/* Appearance */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Appearance</CardTitle>
+                <CardDescription>
+                  Choose between light and dark mode
+                </CardDescription>
+              </div>
+              <Switch
+                checked={isMounted ? resolvedTheme === "dark" : false}
+                onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
+                aria-label="Toggle dark mode"
+              />
+            </div>
+          </CardHeader>
+        </Card>
+
         {/* Okapi Integration */}
         <Card>
           <CardHeader>

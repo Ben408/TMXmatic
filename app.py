@@ -241,6 +241,22 @@ def _effective_cutoff_date(operation: str, form) -> str | None:
     return None
 
 
+def _batch_mt_selected_steps(form) -> list[str]:
+    """Parse selected MT batch steps from form payload."""
+    raw = form.get('batch_mt_steps')
+    if not raw:
+        return ['remove_empty', 'find_duplicates', 'non_true_duplicates', 'remove_sentence']
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return ['remove_empty', 'find_duplicates', 'non_true_duplicates', 'remove_sentence']
+    if not isinstance(parsed, list):
+        return ['remove_empty', 'find_duplicates', 'non_true_duplicates', 'remove_sentence']
+    allowed = {'remove_empty', 'find_duplicates', 'non_true_duplicates', 'remove_sentence', 'remove_old'}
+    selected = [step for step in parsed if isinstance(step, str) and step in allowed]
+    return selected
+
+
 def _xliff_roundtrip_sidecar_path(tmx_path: str) -> str:
     """JSON sidecar written when XLIFF is converted to TMX so processors can round-trip even if they strip TU props."""
     return os.path.splitext(tmx_path)[0] + '.xliff-origin.json'
@@ -496,16 +512,19 @@ def queue():
             for operation in operations:
                 result_list = None
                 effective_cutoff = _effective_cutoff_date(operation, data)
+                batch_mt_kwargs = {}
+                if operation == 'batch_process_mt':
+                    batch_mt_kwargs['batch_mt_steps'] = _batch_mt_selected_steps(data)
                 if result == None:
                     if effective_cutoff:
-                        result_list = process_file(operation, file_list[0], cutoff_date=effective_cutoff)
+                        result_list = process_file(operation, file_list[0], cutoff_date=effective_cutoff, **batch_mt_kwargs)
                     else:
-                        result_list = process_file(operation, file_list[0])
+                        result_list = process_file(operation, file_list[0], **batch_mt_kwargs)
                 else:
                     if effective_cutoff:
-                        result_list = process_file(operation, result, cutoff_date=effective_cutoff)
+                        result_list = process_file(operation, result, cutoff_date=effective_cutoff, **batch_mt_kwargs)
                     else:
-                        result_list = process_file(operation, result)
+                        result_list = process_file(operation, result, **batch_mt_kwargs)
                 if type(result_list) == tuple and len(result_list) > 1 :
                     result = result_list[0]
                     garbage.append(result_list[1])
@@ -622,10 +641,13 @@ def index():
                         result_list = []
                         for file in file_list:
                             effective_cutoff = _effective_cutoff_date(operation, request.form)
+                            batch_mt_kwargs = {}
+                            if operation == 'batch_process_mt':
+                                batch_mt_kwargs['batch_mt_steps'] = _batch_mt_selected_steps(request.form)
                             if effective_cutoff:
-                                result = process_file(operation, file, cutoff_date=effective_cutoff)
+                                result = process_file(operation, file, cutoff_date=effective_cutoff, **batch_mt_kwargs)
                             else:
-                                result = process_file(operation, file)
+                                result = process_file(operation, file, **batch_mt_kwargs)
                             result_list.append(result)         
                 else:
                     if operation == 'split_size':
@@ -634,10 +656,13 @@ def index():
                         result_list = split_by_language(file_list[0])
                     else:
                         effective_cutoff = _effective_cutoff_date(operation, request.form)
+                        batch_mt_kwargs = {}
+                        if operation == 'batch_process_mt':
+                            batch_mt_kwargs['batch_mt_steps'] = _batch_mt_selected_steps(request.form)
                         if effective_cutoff:
-                            result_list = process_file(operation, file_list[0], cutoff_date=effective_cutoff)
+                            result_list = process_file(operation, file_list[0], cutoff_date=effective_cutoff, **batch_mt_kwargs)
                         else:
-                            result_list = process_file(operation, file_list[0])
+                            result_list = process_file(operation, file_list[0], **batch_mt_kwargs)
                         
                 
                 
@@ -716,8 +741,13 @@ def process_file(operation: str, filepath: str, **kwargs) -> str:
             result = OPERATIONS[operation](filepath, kwargs['cutoff_date'])
         elif operation == 'find_date_duplicates' and 'cutoff_date' in kwargs:
             result = OPERATIONS[operation](filepath, kwargs['cutoff_date'])
-        elif operation == 'batch_process_mt' and kwargs.get('cutoff_date'):
-            result = OPERATIONS[operation](filepath, kwargs['cutoff_date'])
+        elif operation == 'batch_process_mt':
+            cutoff_date = kwargs.get('cutoff_date')
+            batch_mt_steps = kwargs.get('batch_mt_steps')
+            if cutoff_date:
+                result = OPERATIONS[operation](filepath, cutoff_date=cutoff_date, selected_steps=batch_mt_steps)
+            else:
+                result = OPERATIONS[operation](filepath, selected_steps=batch_mt_steps)
         else:
             result = OPERATIONS[operation](filepath)
         

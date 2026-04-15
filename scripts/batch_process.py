@@ -11,7 +11,7 @@ import pickle
 from multiprocessing import Pool
 import shutil
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Sequence
 import PythonTmx
 import re
 import lxml.etree as etree
@@ -58,6 +58,18 @@ class TMXLogger:
         """Log operation with detailed debugging if enabled"""
 
 logger = logging.getLogger(__name__)
+_FULL_MRK_WRAPPER_RE = re.compile(r'^\s*<mrk\b[^>]*>(.*?)</mrk>\s*$', re.IGNORECASE | re.DOTALL)
+
+
+def _unwrap_full_mrk_wrapper(text: str) -> str:
+    """
+    If a segment is fully wrapped by a single <mrk ...>...</mrk>, unwrap it and keep inner text.
+    Otherwise, return text unchanged.
+    """
+    match = _FULL_MRK_WRAPPER_RE.match(text or "")
+    if not match:
+        return text
+    return match.group(1)
 
 def batch_process_1_5(file_path: str) -> Tuple[str, List[str]]:
     """
@@ -172,7 +184,11 @@ def _write_mt_training_outputs(
     return str(mt_path), str(removed_path)
 
 
-def batch_process_1_5_9(file_path: str, cutoff_date: Optional[datetime] = None) -> Tuple[str, List[str]]:
+def batch_process_1_5_9(
+    file_path: str,
+    cutoff_date: Optional[datetime] = None,
+    selected_steps: Optional[Sequence[str]] = None,
+) -> Tuple[str, List[str]]:
     """
     Process TMX file through steps 1-5 plus step 9, then MT training pass:
     1-5. All steps from batch_process_1_5
@@ -189,16 +205,45 @@ def batch_process_1_5_9(file_path: str, cutoff_date: Optional[datetime] = None) 
     logger.info(f"Starting batch process 1-5-9 for: {file_path}")
 
     try:
-        # First run steps 1-5
-        current_file, intermediate_files = batch_process_1_5(file_path)
+        step_order = ["remove_empty", "find_duplicates", "non_true_duplicates", "remove_sentence", "remove_old"]
+        enabled_steps = list(selected_steps) if selected_steps is not None else step_order[:-1]
+        current_file = file_path
+        intermediate_files: List[str] = []
+
+        if "remove_empty" in enabled_steps:
+            logger.info("Step 1: Removing empty targets")
+            clean_file, empty_file = empty_targets(current_file)
+            intermediate_files.append(empty_file)
+            current_file = clean_file
+
+        if "find_duplicates" in enabled_steps:
+            logger.info("Step 2: Removing true duplicates")
+            clean_file, dups_file = find_true_duplicates(current_file)
+            intermediate_files.append(dups_file)
+            current_file = clean_file
+
+        if "non_true_duplicates" in enabled_steps:
+            logger.info("Step 3: Extracting non-true duplicates")
+            clean_file, ntd_file = extract_non_true_duplicates(current_file)
+            intermediate_files.append(ntd_file)
+            current_file = clean_file
+
+        if "remove_sentence" in enabled_steps:
+            logger.info("Step 4: Removing sentence-level segments")
+            clean_file, sentence_file = find_sentence_level_segments(current_file)
+            intermediate_files.append(sentence_file)
+            current_file = clean_file
 
         # Step 9: Remove old TUs if cutoff date provided
-        if cutoff_date:
+        if "remove_old" in enabled_steps and cutoff_date:
             logger.info(f"Step 9: Removing TUs older than {cutoff_date}")
-            final_file, old_file = remove_old_tus(current_file, cutoff_date)
+            clean_file, old_file = remove_old_tus(current_file, cutoff_date)
             intermediate_files.append(old_file)
-        else:
-            final_file = current_file
+            current_file = clean_file
+        elif "remove_old" in enabled_steps and not cutoff_date:
+            logger.info("Step 9 selected, but no cutoff date supplied. Skipping remove_old_tus.")
+
+        final_file = current_file
 
         logger.info("Step MT: clean_for_mt (final pass for MT training)")
         clean_tmx, tag_removed, invalid = clean_for_mt(final_file)
@@ -289,6 +334,7 @@ def clean_for_mt(tmx_file: str) -> Tuple[PythonTmx.Tmx, List[PythonTmx.Tu], List
             for tuv in tu.tuvs:
                 # Get original text for comparison
                 original_text = ' '.join(str(seg) for seg in tuv.content)
+                original_text = _unwrap_full_mrk_wrapper(original_text)
                 
                 # Clean the text
                 text = original_text

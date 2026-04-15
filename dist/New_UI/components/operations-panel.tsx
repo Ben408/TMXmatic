@@ -3,7 +3,7 @@
 import { WorkspaceFile, Operation } from "./tmx-workspace"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { useState, useEffect, useId } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Loader2 } from "lucide-react"
@@ -32,57 +32,25 @@ function parseIsoDateToLocal(iso: string): Date | undefined {
 function CutoffDateControl({
   selectedDate,
   setSelectedDate,
-  optionalCutoffToggle,
-  optionalCutoffEnabled,
-  onOptionalCutoffEnabledChange,
 }: {
   selectedDate?: Date
   setSelectedDate: (date?: Date) => void
-  optionalCutoffToggle?: boolean
-  optionalCutoffEnabled?: boolean
-  onOptionalCutoffEnabledChange?: (enabled: boolean) => void
 }) {
-  const toggleId = useId()
-  const showDateInput =
-    !optionalCutoffToggle || (optionalCutoffToggle && optionalCutoffEnabled)
-
   return (
-    <div className="flex flex-col items-end gap-2">
-      {optionalCutoffToggle && onOptionalCutoffEnabledChange ? (
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id={toggleId}
-            checked={optionalCutoffEnabled}
-            onCheckedChange={(v) => onOptionalCutoffEnabledChange(v === true)}
-          />
-          <Label
-            htmlFor={toggleId}
-            className="text-sm font-normal cursor-pointer max-w-[240px] text-right leading-snug"
-          >
-            Remove TUs older than cutoff (after batch clean)
-          </Label>
-        </div>
-      ) : null}
-      {showDateInput ? (
-        <Input
-          type="date"
-          value={selectedDate ? format(selectedDate, "yyyy-MM-dd") : ""}
-          onChange={(e) => {
-            const v = e.target.value
-            if (!v) setSelectedDate(undefined)
-            else {
-              const parsed = parseIsoDateToLocal(v)
-              if (parsed) setSelectedDate(parsed)
-            }
-          }}
-          className="w-[155px] font-mono text-sm"
-        />
-      ) : null}
-      {optionalCutoffToggle && !optionalCutoffEnabled ? (
-        <span className="text-xs text-muted-foreground max-w-[260px] text-right">
-          Check the option above to enter a cutoff date.
-        </span>
-      ) : null}
+    <div className="flex flex-col items-start gap-2">
+      <Input
+        type="date"
+        value={selectedDate ? format(selectedDate, "yyyy-MM-dd") : ""}
+        onChange={(e) => {
+          const v = e.target.value
+          if (!v) setSelectedDate(undefined)
+          else {
+            const parsed = parseIsoDateToLocal(v)
+            if (parsed) setSelectedDate(parsed)
+          }
+        }}
+        className="w-[155px] font-mono text-sm"
+      />
     </div>
   )
 }
@@ -98,8 +66,8 @@ export interface OperationsPanelProps {
   onClearSelection?: () => void
   cutoffDate?: Date
   onCutoffDateChange: (date?: Date) => void
-  batchMtCutoffEnabled: boolean
-  onBatchMtCutoffEnabledChange: (enabled: boolean) => void
+  batchMtSelectedSteps: string[]
+  onBatchMtSelectedStepsChange: (steps: string[]) => void
 }
 
 export function OperationsPanel({
@@ -113,13 +81,12 @@ export function OperationsPanel({
   onClearSelection,
   cutoffDate,
   onCutoffDateChange,
-  batchMtCutoffEnabled,
-  onBatchMtCutoffEnabledChange,
+  batchMtSelectedSteps,
+  onBatchMtSelectedStepsChange,
 }: OperationsPanelProps) {
   const [fileTypeTab, setFileTypeTab] = useState("tmx")
   const [activeTab, setActiveTab] = useState("all")
   const [splitSize, setSplitSize] = useState<number>(1000)
-  const [selectedOperations, setSelectedOperations] = useState<string[]>([])
   const [showWarningDialog, setShowWarningDialog] = useState(false)
   const [userConfirmed, setUserConfirmed] = useState(false)
   const isProcessing = files.length > 0 && files[0].status === "processing"
@@ -186,8 +153,10 @@ export function OperationsPanel({
   const conversionOps = tmxOperations.filter((op) => op.id.startsWith("convert_") || op.id.includes("merge"))
   const cleaningOps = tmxOperations.filter((op) => op.id.includes("clean") || op.id.includes("empty") || op.id.includes("duplicates") || op.id.includes("remove") || op.id.includes("count") || op.id.includes("extract"))
   const splitOps = tmxOperations.filter((op) => op.id.includes("split"))
-  const batchOps = tmxOperations.filter((op) => op.id.includes("batch"))
+  const mtCleaningOps = tmxOperations.filter((op) => op.id === "batch_process_mt")
+  const batchOps = tmxOperations.filter((op) => op.id.includes("batch") && op.id !== "batch_process_mt")
   const analysisOps = tmxOperations.filter((op) => op.id.includes("count") || op.id.includes("extract") || op.id.includes("find"))
+  const tmxAllOps = tmxOperations.filter((op) => op.id !== "batch_process_mt")
 
   // Group operations by category (for TBX)
   const tbxConversionOps = tbxOperations.filter((op) => op.id.startsWith("convert_") || op.id.includes("merge"))
@@ -196,39 +165,8 @@ export function OperationsPanel({
   const tbxBatchOps = tbxOperations.filter((op) => op.id.includes("batch"))
   const tbxAnalysisOps = tbxOperations.filter((op) => op.id.includes("count") || op.id.includes("extract") || op.id.includes("find"))
 
-  const handleOperationSelect = (operationId: string) => {
-    setSelectedOperations(prev => {
-      if (prev.includes(operationId)) {
-        return prev.filter(id => id !== operationId)
-      }
-      return [...prev, operationId]
-    })
-  }
-
   const handleAddToQueue = (operationId: string) => {
     onQueueUpdate([...queuedOperations, operationId])
-  }
-
-  const handleMoveOperation = (index: number, direction: 'up' | 'down') => {
-    const newIndex = direction === 'up' ? index - 1 : index + 1
-    if (newIndex < 0 || newIndex >= queuedOperations.length) return
-
-    const newQueue = [...queuedOperations]
-    const [movedItem] = newQueue.splice(index, 1)
-    newQueue.splice(newIndex, 0, movedItem)
-    onQueueUpdate(newQueue)
-  }
-
-  const handleRemoveFromQueue = (index: number) => {
-    const newQueue = [...queuedOperations]
-    newQueue.splice(index, 1)
-    onQueueUpdate(newQueue)
-  }
-
-  const handleProcessQueue = async () => {
-    for (const operationId of queuedOperations) {
-      await onProcess(operationId, operationId === "split_size" ? splitSize : undefined)
-    }
   }
 
   const handleContinue = () => {
@@ -243,9 +181,20 @@ export function OperationsPanel({
     }
   }
 
-  const renderOperationsContent = (ops: Operation[], conversionOps: Operation[], cleaningOps: Operation[], analysisOps: Operation[], splitOps: Operation[], batchOps: Operation[]) => (
+  const renderOperationsContent = (
+    ops: Operation[],
+    conversionOps: Operation[],
+    cleaningOps: Operation[],
+    analysisOps: Operation[],
+    splitOps: Operation[],
+    batchOps: Operation[],
+    mtCleaningOps: Operation[]
+  ) => (
     <Tabs value={activeTab} onValueChange={setActiveTab}>
-      <TabsList className="grid grid-cols-7 mb-4">
+      <TabsList
+        className="grid mb-4"
+        style={{ gridTemplateColumns: `repeat(${mtCleaningOps.length > 0 ? 8 : 7}, minmax(0, 1fr))` }}
+      >
         <TabsTrigger value="all" disabled={isProcessing}>
           All
         </TabsTrigger>
@@ -264,33 +213,42 @@ export function OperationsPanel({
         <TabsTrigger value="batch" disabled={isProcessing}>
           Batch
         </TabsTrigger>
+        {mtCleaningOps.length > 0 ? (
+          <TabsTrigger value="mt-cleaning" disabled={isProcessing}>
+            MT Cleaning
+          </TabsTrigger>
+        ) : null}
         <TabsTrigger value="custom" disabled={isProcessing}>
           Queuing
         </TabsTrigger>
       </TabsList>
 
       <TabsContent value="all" className="space-y-4">
-        <OperationsList operations={ops} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={cutoffDate} setSelectedDate={onCutoffDateChange} batchMtCutoffEnabled={batchMtCutoffEnabled} onBatchMtCutoffEnabledChange={onBatchMtCutoffEnabledChange} />
+        <OperationsList operations={ops} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={cutoffDate} setSelectedDate={onCutoffDateChange} batchMtSelectedSteps={batchMtSelectedSteps} onBatchMtSelectedStepsChange={onBatchMtSelectedStepsChange} />
       </TabsContent>
 
       <TabsContent value="conversion" className="space-y-4">
-        <OperationsList operations={conversionOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={cutoffDate} setSelectedDate={onCutoffDateChange} batchMtCutoffEnabled={batchMtCutoffEnabled} onBatchMtCutoffEnabledChange={onBatchMtCutoffEnabledChange} />
+        <OperationsList operations={conversionOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={cutoffDate} setSelectedDate={onCutoffDateChange} batchMtSelectedSteps={batchMtSelectedSteps} onBatchMtSelectedStepsChange={onBatchMtSelectedStepsChange} />
       </TabsContent>
 
       <TabsContent value="cleaning" className="space-y-4">
-        <OperationsList operations={cleaningOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={cutoffDate} setSelectedDate={onCutoffDateChange} batchMtCutoffEnabled={batchMtCutoffEnabled} onBatchMtCutoffEnabledChange={onBatchMtCutoffEnabledChange} />
+        <OperationsList operations={cleaningOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={cutoffDate} setSelectedDate={onCutoffDateChange} batchMtSelectedSteps={batchMtSelectedSteps} onBatchMtSelectedStepsChange={onBatchMtSelectedStepsChange} />
       </TabsContent>
 
       <TabsContent value="analysis" className="space-y-4">
-        <OperationsList operations={analysisOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={cutoffDate} setSelectedDate={onCutoffDateChange} batchMtCutoffEnabled={batchMtCutoffEnabled} onBatchMtCutoffEnabledChange={onBatchMtCutoffEnabledChange} />
+        <OperationsList operations={analysisOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={cutoffDate} setSelectedDate={onCutoffDateChange} batchMtSelectedSteps={batchMtSelectedSteps} onBatchMtSelectedStepsChange={onBatchMtSelectedStepsChange} />
       </TabsContent>
 
       <TabsContent value="splitting" className="space-y-4">
-        <OperationsList operations={splitOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={cutoffDate} setSelectedDate={onCutoffDateChange} batchMtCutoffEnabled={batchMtCutoffEnabled} onBatchMtCutoffEnabledChange={onBatchMtCutoffEnabledChange} />
+        <OperationsList operations={splitOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={cutoffDate} setSelectedDate={onCutoffDateChange} batchMtSelectedSteps={batchMtSelectedSteps} onBatchMtSelectedStepsChange={onBatchMtSelectedStepsChange} />
       </TabsContent>
 
       <TabsContent value="batch" className="space-y-4">
-        <OperationsList operations={batchOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={cutoffDate} setSelectedDate={onCutoffDateChange} batchMtCutoffEnabled={batchMtCutoffEnabled} onBatchMtCutoffEnabledChange={onBatchMtCutoffEnabledChange} />
+        <OperationsList operations={batchOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={cutoffDate} setSelectedDate={onCutoffDateChange} batchMtSelectedSteps={batchMtSelectedSteps} onBatchMtSelectedStepsChange={onBatchMtSelectedStepsChange} />
+      </TabsContent>
+
+      <TabsContent value="mt-cleaning" className="space-y-4">
+        <OperationsList operations={mtCleaningOps} onProcess={onProcess} isProcessing={isProcessing} files={files} splitSize={splitSize} setSplitSize={setSplitSize} selectedDate={cutoffDate} setSelectedDate={onCutoffDateChange} batchMtSelectedSteps={batchMtSelectedSteps} onBatchMtSelectedStepsChange={onBatchMtSelectedStepsChange} />
       </TabsContent>
 
       <TabsContent value="custom" className="space-y-4">
@@ -318,13 +276,10 @@ export function OperationsPanel({
                   <span className="text-sm text-muted-foreground">segments</span>
                 </div>
               )}
-              {(operation.id === "remove_old" || operation.id === "find_date_duplicates" || operation.id === "batch_process_mt") && (
+              {(operation.id === "remove_old" || operation.id === "find_date_duplicates" || (operation.id === "batch_process_mt" && batchMtSelectedSteps.includes("remove_old"))) && (
                 <CutoffDateControl
                   selectedDate={cutoffDate}
                   setSelectedDate={onCutoffDateChange}
-                  optionalCutoffToggle={operation.id === "batch_process_mt"}
-                  optionalCutoffEnabled={batchMtCutoffEnabled}
-                  onOptionalCutoffEnabledChange={onBatchMtCutoffEnabledChange}
                 />
               )}
               <Button
@@ -391,7 +346,7 @@ export function OperationsPanel({
               <CardTitle>TMX Operations</CardTitle>
             </CardHeader>
             <CardContent>
-              {renderOperationsContent(tmxOperations, conversionOps, cleaningOps, analysisOps, splitOps, batchOps)}
+              {renderOperationsContent(tmxAllOps, conversionOps, cleaningOps, analysisOps, splitOps, batchOps, mtCleaningOps)}
             </CardContent>
           </Card>
         </div>
@@ -410,7 +365,7 @@ export function OperationsPanel({
             </CardHeader>
             <CardContent>
               {tbxOperations.length > 0 ? (
-                renderOperationsContent(tbxOperations, tbxConversionOps, tbxCleaningOps, tbxAnalysisOps, tbxSplitOps, tbxBatchOps)
+                renderOperationsContent(tbxOperations, tbxConversionOps, tbxCleaningOps, tbxAnalysisOps, tbxSplitOps, tbxBatchOps, [])
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
                   <p>No TBX operations available yet.</p>
@@ -450,14 +405,14 @@ export function OperationsPanel({
 
               {showTmxTab && (
                 <TabsContent value="tmx" className="space-y-4">
-                  {renderOperationsContent(tmxOperations, conversionOps, cleaningOps, analysisOps, splitOps, batchOps)}
+                  {renderOperationsContent(tmxAllOps, conversionOps, cleaningOps, analysisOps, splitOps, batchOps, mtCleaningOps)}
                 </TabsContent>
               )}
 
               {showTbxTab && (
                 <TabsContent value="tbx" className="space-y-4">
                   {tbxOperations.length > 0 ? (
-                    renderOperationsContent(tbxOperations, tbxConversionOps, tbxCleaningOps, tbxAnalysisOps, tbxSplitOps, tbxBatchOps)
+                    renderOperationsContent(tbxOperations, tbxConversionOps, tbxCleaningOps, tbxAnalysisOps, tbxSplitOps, tbxBatchOps, [])
                   ) : (
                     <div className="text-center py-8 text-muted-foreground">
                       <p>No TBX operations available yet.</p>
@@ -483,8 +438,8 @@ function OperationsList({
   setSplitSize,
   selectedDate,
   setSelectedDate,
-  batchMtCutoffEnabled,
-  onBatchMtCutoffEnabledChange,
+  batchMtSelectedSteps,
+  onBatchMtSelectedStepsChange,
 }: {
   operations: Operation[]
   onProcess: (operationId: string, size?: number) => Promise<void>
@@ -494,9 +449,29 @@ function OperationsList({
   setSplitSize: (size: number) => void
   selectedDate?: Date
   setSelectedDate: (date?: Date) => void
-  batchMtCutoffEnabled: boolean
-  onBatchMtCutoffEnabledChange: (enabled: boolean) => void
+  batchMtSelectedSteps: string[]
+  onBatchMtSelectedStepsChange: (steps: string[]) => void
 }) {
+  const batchMtStepOptions = [
+    { id: "remove_empty", label: "Remove empty targets" },
+    { id: "find_duplicates", label: "Remove true duplicates" },
+    { id: "non_true_duplicates", label: "Extract non-true duplicates" },
+    { id: "remove_sentence", label: "Remove sentence-level segments" },
+    { id: "remove_old", label: "Remove old TUs (requires cutoff date)" },
+  ] as const
+
+  const toggleBatchMtStep = (stepId: string, checked: boolean) => {
+    if (checked) {
+      if (!batchMtSelectedSteps.includes(stepId)) {
+        onBatchMtSelectedStepsChange([...batchMtSelectedSteps, stepId])
+      }
+      return
+    }
+    onBatchMtSelectedStepsChange(batchMtSelectedSteps.filter((id) => id !== stepId))
+  }
+
+  const batchMtRemoveOldEnabled = batchMtSelectedSteps.includes("remove_old")
+
   return (
     <div className="space-y-4">
       {operations.map((operation) => (
@@ -504,6 +479,40 @@ function OperationsList({
           <div className="flex-1">
             <h3 className="font-medium">{operation.name}</h3>
             <p className="text-sm text-muted-foreground">{operation.description}</p>
+            {operation.id === "batch_process_mt" ? (
+              <div className="mt-3 space-y-3">
+                <div className="space-y-2">
+                  {batchMtStepOptions.map((step) => (
+                    <div key={step.id} className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id={`batch-mt-step-${step.id}`}
+                          checked={batchMtSelectedSteps.includes(step.id)}
+                          onCheckedChange={(v) => toggleBatchMtStep(step.id, v === true)}
+                        />
+                        <Label htmlFor={`batch-mt-step-${step.id}`} className="text-sm font-normal cursor-pointer">
+                          {step.label}
+                        </Label>
+                      </div>
+                      {step.id === "remove_old" && batchMtSelectedSteps.includes("remove_old") ? (
+                        <div className="ml-6">
+                          <CutoffDateControl
+                            selectedDate={selectedDate}
+                            setSelectedDate={setSelectedDate}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox id="batch-mt-step-clean-for-mt" checked={true} disabled />
+                  <Label htmlFor="batch-mt-step-clean-for-mt" className="text-sm font-normal text-muted-foreground">
+                    MT Cleaning (this includes numbering and other MT-oriented filters)
+                  </Label>
+                </div>
+              </div>
+            ) : null}
           </div>
           {operation.id === "split_size" && (
             <div className="flex items-center gap-2">
@@ -517,13 +526,10 @@ function OperationsList({
               <span className="text-sm text-muted-foreground">segments</span>
             </div>
           )}
-          {(operation.id === "remove_old" || operation.id === "find_date_duplicates" || operation.id === "batch_process_mt") && (
+          {(operation.id === "remove_old" || operation.id === "find_date_duplicates") && (
             <CutoffDateControl
               selectedDate={selectedDate}
               setSelectedDate={setSelectedDate}
-              optionalCutoffToggle={operation.id === "batch_process_mt"}
-              optionalCutoffEnabled={batchMtCutoffEnabled}
-              onOptionalCutoffEnabledChange={onBatchMtCutoffEnabledChange}
             />
           )}
           <Button
@@ -536,7 +542,7 @@ function OperationsList({
               ((operation.id === "remove_old" || operation.id === "find_date_duplicates") &&
                 !selectedDate) ||
               (operation.id === "batch_process_mt" &&
-                batchMtCutoffEnabled &&
+                batchMtRemoveOldEnabled &&
                 !selectedDate)
             }
           >
@@ -555,67 +561,4 @@ function OperationsList({
   )
 }
 
-function getOperationDescription(opId: string): string {
-  switch (opId) {
-    case "convert_vatv":
-      return "Convert Termweb CSV files to TMX format."
-    case "convert_termweb":
-      return "Convert TermWeb Excel files to TMX format."
-    case "remove_empty":
-      return "Remove translation units with empty target segments."
-    case "find_duplicates":
-      return "Identify and extract duplicate translation units."
-    case "non_true_duplicates":
-      return "Find segments that are similar but not exact duplicates."
-    case "remove_sentence":
-      return "Extract sentence-level segments from TMX files."
-    case "remove_old":
-      return "Remove translation units older than a specified date."
-    case "clean_mt":
-      return "Clean TMX files for machine translation by removing metadata."
-    case "remove_context_props":
-      return "Remove context properties from TMX files."
-    case "count_last_usage":
-      return "Count translation units by their last usage dates."
-    case "count_creation_dates":
-      return "Count translation units by their creation dates."
-    case "extract_translations":
-      return "Extract all translations to CSV format with metadata."
-    case "find_date_duplicates":
-      return "Find duplicates based on creation and change dates."
-    case "merge_tmx":
-      return "Combine multiple TMX files into a single file."
-    case "split_language":
-      return "Split a TMX file into separate files by language pair."
-    case "split_size":
-      return "Split a large TMX file into smaller files by segment count."
-    case "batch_process_tms":
-      return "Apply multiple cleaning operations for TMS compatibility."
-    case "batch_process_mt":
-      return "Batch clean, optional old-TU cutoff, then clean_for_mt (MT-ready mt_*.tmx plus removed_mt_*.tmx in the zip)."
-    case "xliff_tmx_leverage":
-      return "Leverage TMX into XLIFF"
-    case "xliff_cleanup":
-      return "Clean XLIFF"
-    case "xliff_validate":
-      return "Validate XLIFF"
-    case "process_tbx":
-      return "Remove duplicate terms with less information."
-    default:
-      return "Apply this operation to the selected file."
-  }
-}
-
-const isValidFileType = (file: File, operation: Operation) => {
-  const extension = file.name.split('.').pop()?.toLowerCase()
-
-  if (operation.requiresFiles?.includes("xliff")) {
-    return extension === "xlf" || extension === "xliff"
-  }
-  if (operation.requiresFiles?.includes("tmx")) {
-    return extension === "tmx"
-  }
-  // ... other file type checks ...
-  return true
-}
 

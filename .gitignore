@@ -4,3 +4,4 @@ mock_okapi.py
 test.tmx
 **/__pycache__
 uploads
+scripts/PythonTmx/__pycache__
