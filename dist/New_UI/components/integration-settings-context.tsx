@@ -10,12 +10,6 @@ import {
 } from "react"
 
 export type IntegrationSettings = {
-  blackbird?: {
-    enabled?: boolean
-    api_key?: string
-    api_url?: string
-    project_id?: string
-  }
   okapi?: {
     enabled?: boolean
     api_key?: string

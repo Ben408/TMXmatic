@@ -28,13 +28,7 @@ interface ConnectionTestResult {
 }
 
 export function SettingsPage({ onBack }: SettingsPageProps) {
-  const [blackbirdEnabled, setBlackbirdEnabled] = useState(false)
   const [okapiEnabled, setOkapiEnabled] = useState(false)
-  
-  // Blackbird settings
-  const [blackbirdApiKey, setBlackbirdApiKey] = useState("")
-  const [blackbirdApiUrl, setBlackbirdApiUrl] = useState("")
-  const [blackbirdProjectId, setBlackbirdProjectId] = useState("")
   
   // Okapi settings
   const [okapiApiKey, setOkapiApiKey] = useState("")
@@ -44,7 +38,6 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
   // Loading and connection test states
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [testingBlackbird, setTestingBlackbird] = useState(false)
   const [testingOkapi, setTestingOkapi] = useState(false)
   const [connectionDialogOpen, setConnectionDialogOpen] = useState(false)
   const [connectionResult, setConnectionResult] = useState<ConnectionTestResult | null>(null)
@@ -61,14 +54,6 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
       const response = await fetch('http://127.0.0.1:5000/api/settings', { cache: 'no-store' })
       if (response.ok) {
         const data = await response.json()
-        
-        // Set Blackbird settings
-        if (data.blackbird) {
-          setBlackbirdEnabled(data.blackbird.enabled || false)
-          setBlackbirdApiKey(data.blackbird.api_key || "")
-          setBlackbirdApiUrl(data.blackbird.api_url || "")
-          setBlackbirdProjectId(data.blackbird.project_id || "")
-        }
         
         // Set Okapi settings
         if (data.okapi) {
@@ -99,12 +84,6 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          blackbird: {
-            enabled: blackbirdEnabled,
-            api_key: blackbirdApiKey,
-            api_url: blackbirdApiUrl,
-            project_id: blackbirdProjectId,
-          },
           okapi: {
             enabled: okapiEnabled,
             api_key: okapiApiKey,
@@ -135,15 +114,9 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
     }
   }
 
-  const testConnection = async (integration: 'blackbird' | 'okapi') => {
+  const testConnection = async (integration: 'okapi') => {
     // First save current settings temporarily
     const tempSettings = {
-      blackbird: {
-        enabled: integration === 'blackbird' ? true : blackbirdEnabled,
-        api_key: blackbirdApiKey,
-        api_url: blackbirdApiUrl,
-        project_id: blackbirdProjectId,
-      },
       okapi: {
         enabled: integration === 'okapi' ? true : okapiEnabled,
         api_key: okapiApiKey,
@@ -153,34 +126,18 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
     }
 
     // Validate required fields
-    if (integration === 'blackbird') {
-      if (!blackbirdApiKey || !blackbirdApiUrl ) {
-        setConnectionResult({
-          success: false,
-          message: "Some fields are missing, please fill them in.",
-        })
-        setConnectionDialogOpen(true)
-        setCurrentTestIntegration("Blackbird")
-        return
-      }
-    } else {
-      if (!okapiApiKey || !okapiApiUrl || !okapiWorkspaceId) {
-        setConnectionResult({
-          success: false,
-          message: "Some fields are missing, please fill them in.",
-        })
-        setConnectionDialogOpen(true)
-        setCurrentTestIntegration("Okapi")
-        return
-      }
+    if (!okapiApiKey || !okapiApiUrl || !okapiWorkspaceId) {
+      setConnectionResult({
+        success: false,
+        message: "Some fields are missing, please fill them in.",
+      })
+      setConnectionDialogOpen(true)
+      setCurrentTestIntegration("Okapi")
+      return
     }
 
     try {
-      if (integration === 'blackbird') {
-        setTestingBlackbird(true)
-      } else {
-        setTestingOkapi(true)
-      }
+      setTestingOkapi(true)
 
       // Save settings temporarily for the test
       await fetch('http://127.0.0.1:5000/api/settings', {
@@ -199,7 +156,6 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
         },
         body: JSON.stringify({
           integration,
-          blackbird: tempSettings.blackbird,
           okapi: tempSettings.okapi,
         }),
       })
@@ -212,7 +168,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
         statusCode: data.status_code,
         error: data.error,
       })
-      setCurrentTestIntegration(integration === 'blackbird' ? "Blackbird" : "Okapi")
+      setCurrentTestIntegration("Okapi")
       setConnectionDialogOpen(true)
     } catch (error) {
       setConnectionResult({
@@ -220,14 +176,10 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
         message: "Failed to test connection",
         error: error instanceof Error ? error.message : "Unknown error",
       })
-      setCurrentTestIntegration(integration === 'blackbird' ? "Blackbird" : "Okapi")
+      setCurrentTestIntegration("Okapi")
       setConnectionDialogOpen(true)
     } finally {
-      if (integration === 'blackbird') {
-        setTestingBlackbird(false)
-      } else {
-        setTestingOkapi(false)
-      }
+      setTestingOkapi(false)
     }
   }
 
@@ -251,77 +203,6 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
       </div>
 
       <div className="space-y-6 max-w-4xl">
-        {/* Blackbird Integration */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Blackbird Integration</CardTitle>
-                <CardDescription>
-                  Configure your Blackbird API connection settings
-                </CardDescription>
-              </div>
-              <Switch
-                checked={blackbirdEnabled}
-                onCheckedChange={setBlackbirdEnabled}
-                className="data-[state=checked]:bg-blue-600 data-[state=unchecked]:bg-red-500"
-              />
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="blackbird-api-key">API Key</Label>
-              <Input
-                id="blackbird-api-key"
-                type="password"
-                placeholder="Enter your Blackbird API key"
-                value={blackbirdApiKey}
-                onChange={(e) => setBlackbirdApiKey(e.target.value)}
-                disabled={!blackbirdEnabled}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="blackbird-api-url">API URL</Label>
-              <Input
-                id="blackbird-api-url"
-                type="url"
-                placeholder="https://api.blackbird.com"
-                value={blackbirdApiUrl}
-                onChange={(e) => setBlackbirdApiUrl(e.target.value)}
-                disabled={!blackbirdEnabled}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="blackbird-project-id">Project ID</Label>
-              <Input
-                id="blackbird-project-id"
-                placeholder="Enter your project ID"
-                value={blackbirdProjectId}
-                onChange={(e) => setBlackbirdProjectId(e.target.value)}
-                disabled={!blackbirdEnabled}
-              />
-            </div>
-            <Button
-              variant="outline"
-              onClick={() => testConnection('blackbird')}
-              disabled={!blackbirdEnabled || testingBlackbird}
-              className="w-full"
-            >
-              {testingBlackbird ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Testing...
-                </>
-              ) : (
-                <>
-                  <Wifi className="mr-2 h-4 w-4" />
-                  Test Connection
-                </>
-              )}
-            </Button>
-          </CardContent>
-        </Card>
-
         {/* Okapi Integration */}
         <Card>
           <CardHeader>

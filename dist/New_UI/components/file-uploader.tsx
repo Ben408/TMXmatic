@@ -20,7 +20,7 @@ import { toast } from "@/components/ui/use-toast"
 import { Input } from "@/components/ui/input"
 
 type SourceProject = {
-  integration: "blackbird" | "okapi"
+  integration: "okapi"
   projectId?: string
   workspaceId?: string
   fileId?: string
@@ -39,7 +39,7 @@ export function FileUploader({ onFilesAdded }: FileUploaderProps) {
 
   const [pullDialogOpen, setPullDialogOpen] = useState(false)
   const [pullDialogFiles, setPullDialogFiles] = useState<ProjectFile[]>([])
-  const [pullDialogIntegration, setPullDialogIntegration] = useState<"blackbird" | "okapi" | null>(null)
+  const [pullDialogIntegration, setPullDialogIntegration] = useState<"okapi" | null>(null)
   const [pullDialogWorkspaceId, setPullDialogWorkspaceId] = useState<string | null>(null)
   const [pullDialogProjectId, setPullDialogProjectId] = useState<string | null>(null)
   const [selectedPullFileIds, setSelectedPullFileIds] = useState<Set<string>>(new Set())
@@ -53,9 +53,7 @@ export function FileUploader({ onFilesAdded }: FileUploaderProps) {
     return f.name.toLowerCase().includes(q) || f.id.toLowerCase().includes(q)
   })
 
-  const hasIntegration =
-    (settings?.blackbird?.enabled && settings?.blackbird?.api_key && settings?.blackbird?.project_id) ||
-    (settings?.okapi?.enabled && settings?.okapi?.api_key && settings?.okapi?.workspace_id)
+  const hasIntegration = settings?.okapi?.enabled && settings?.okapi?.api_key && settings?.okapi?.workspace_id
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
@@ -116,17 +114,13 @@ export function FileUploader({ onFilesAdded }: FileUploaderProps) {
         return
       }
       const settings = await settingsResponse.json()
-      let integration: "blackbird" | "okapi" | null = null
-      let projectId: string | undefined
+      let integration: "okapi" | null = null
       let workspaceId: string | undefined
-      if (settings.blackbird?.enabled && settings.blackbird?.api_key && settings.blackbird?.project_id) {
-        integration = "blackbird"
-        projectId = settings.blackbird.project_id
-      } else if (settings.okapi?.enabled && settings.okapi?.api_key && settings.okapi?.workspace_id) {
+      if (settings.okapi?.enabled && settings.okapi?.api_key && settings.okapi?.workspace_id) {
         integration = "okapi"
         workspaceId = settings.okapi.workspace_id
       } else {
-        toast({ title: "No integration", description: "Configure Blackbird or Okapi in Settings first.", variant: "destructive" })
+        toast({ title: "No integration", description: "Configure Okapi in Settings first.", variant: "destructive" })
         return
       }
       setPullListLoading(true)
@@ -136,7 +130,7 @@ export function FileUploader({ onFilesAdded }: FileUploaderProps) {
       const pullResponse = await fetch('http://127.0.0.1:5000/api/pull-from-project', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ integration, project_id: projectId, workspace_id: workspaceId }),
+        body: JSON.stringify({ integration, workspace_id: workspaceId }),
       })
       if (!pullResponse.ok) {
         const err = await pullResponse.json()
@@ -155,7 +149,7 @@ export function FileUploader({ onFilesAdded }: FileUploaderProps) {
       setPullDialogFiles(fileList)
       setPullDialogIntegration(integration)
       setPullDialogWorkspaceId(workspaceId ?? null)
-      setPullDialogProjectId(projectId ?? null)
+      setPullDialogProjectId(null)
       setSelectedPullFileIds(new Set(fileList.map((f) => f.id)))
     } catch (error) {
       setPullDialogOpen(false)
@@ -272,7 +266,7 @@ export function FileUploader({ onFilesAdded }: FileUploaderProps) {
             <p className="mb-4 text-sm text-muted-foreground">
               {hasIntegration
                 ? "Import files from your connected projects"
-                : "Connect Blackbird or Okapi in Settings to pull files"}
+                : "Connect Okapi in Settings to pull files"}
             </p>
             <Button onClick={handlePullFromProject} variant="outline" disabled={!hasIntegration}>
               <Download className="mr-2 h-4 w-4" />

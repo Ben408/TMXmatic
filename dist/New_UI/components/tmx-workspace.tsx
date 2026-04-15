@@ -53,7 +53,7 @@ export type WorkspaceFile = {
     xliffFile?: string
   }
   sourceProject?: {
-    integration: "blackbird" | "okapi"
+    integration: "okapi"
     projectId?: string
     workspaceId?: string
     fileId?: string
@@ -201,13 +201,13 @@ export function TMXWorkspace() {
     newFiles: File[],
     sourceProject?:
       | {
-          integration: "blackbird" | "okapi"
+          integration: "okapi"
           projectId?: string
           workspaceId?: string
           fileId?: string
         }
       | {
-          integration: "blackbird" | "okapi"
+          integration: "okapi"
           projectId?: string
           workspaceId?: string
           fileId?: string

@@ -272,7 +272,6 @@ def clean_for_mt(tmx_file: str) -> Tuple[PythonTmx.Tmx, List[PythonTmx.Tu], List
     number_only_pattern = re.compile(r'^\d+$')
     
     try:
-        logger.info("llego hasta aca")
         tmx = _load_tmx_object(tmx_file)
         clean_tmx = PythonTmx.Tmx(header=tmx.header, tus=[])
         source_lang = (tmx.header.srclang or "en").lower()

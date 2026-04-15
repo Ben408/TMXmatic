@@ -35,7 +35,6 @@ from scripts.xliff_operations import leverage_tmx_into_xliff, check_empty_target
 from scripts.clean_tmx_for_mt import clean_tmx_for_mt
 from scripts.integration_apis import (
     IntegrationSettings, 
-    get_blackbird_client, 
     get_okapi_client,
     test_integration_connection
 )
@@ -842,9 +841,6 @@ def settings():
             # Validate and update settings
             current_settings = IntegrationSettings.load_settings()
             
-            if 'blackbird' in data:
-                current_settings['blackbird'].update(data['blackbird'])
-            
             if 'okapi' in data:
                 current_settings['okapi'].update(data['okapi'])
             
@@ -882,27 +878,7 @@ def upload_to_project():
         upload_path = convert_tmx_to_xliff_if_needed(filepath)
 
         try:
-            if integration.lower() == 'blackbird':
-                if not project_id:
-                    return jsonify({'error': 'Project ID required for Blackbird'}), 400
-                
-                client = get_blackbird_client()
-                if not client:
-                    return jsonify({'error': 'Blackbird is not configured'}), 400
-                
-                # Upload file to Blackbird
-                success, result = client.upload_file(upload_path)
-                if success:
-                    return jsonify({
-                        'success': True,
-                        'message': 'File uploaded successfully to Blackbird',
-                        'file_id': result.get('file_id') if isinstance(result, dict) else None
-                    })
-                else:
-                    error_msg = result.get('error', 'Upload failed') if isinstance(result, dict) else str(result)
-                    return jsonify({'error': error_msg}), 500
-            
-            elif integration.lower() == 'okapi':
+            if integration.lower() == 'okapi':
                 if not workspace_id:
                     return jsonify({'error': 'Workspace ID required for Okapi'}), 400
                 
@@ -949,27 +925,7 @@ def pull_from_project():
         if not integration:
             return jsonify({'error': 'Integration name required'}), 400
         
-        if integration.lower() == 'blackbird':
-            project_id = data.get('project_id')
-            if not project_id:
-                return jsonify({'error': 'Project ID required for Blackbird'}), 400
-            
-            client = get_blackbird_client()
-            if not client:
-                return jsonify({'error': 'Blackbird is not configured'}), 400
-            
-            # List files in project
-            success, result = client.list_files()
-            if success:
-                return jsonify({
-                    'success': True,
-                    'files': result.get('files', []) if isinstance(result, dict) else []
-                })
-            else:
-                error_msg = result.get('error', 'Failed to list files') if isinstance(result, dict) else str(result)
-                return jsonify({'error': error_msg}), 500
-        
-        elif integration.lower() == 'okapi':
+        if integration.lower() == 'okapi':
             workspace_id = data.get('workspace_id')
             if not workspace_id:
                 return jsonify({'error': 'Workspace ID required for Okapi'}), 400
@@ -999,7 +955,7 @@ def pull_from_project():
 
 @app.route('/api/download-from-project', methods=['POST'])
 def download_from_project():
-    """Download a single file from a connected project (Okapi/Blackbird) to stream to the client."""
+    """Download a single file from Okapi to stream to the client."""
     try:
         data = request.get_json()
         if not data:
@@ -1011,14 +967,7 @@ def download_from_project():
             return jsonify({'error': 'integration and file_id required'}), 400
         file_name = secure_filename(file_name) or 'download'
 
-        if integration.lower() == 'blackbird':
-            project_id = data.get('project_id')
-            if not project_id:
-                return jsonify({'error': 'project_id required for Blackbird'}), 400
-            client = get_blackbird_client()
-            if not client:
-                return jsonify({'error': 'Blackbird is not configured'}), 400
-        elif integration.lower() == 'okapi':
+        if integration.lower() == 'okapi':
             workspace_id = data.get('workspace_id')
             if not workspace_id:
                 return jsonify({'error': 'workspace_id required for Okapi'}), 400
@@ -1065,8 +1014,6 @@ def test_connection():
         integration = data['integration'].lower()
         # Use credentials from request body if provided (e.g. current form values)
         override_settings = {}
-        if 'blackbird' in data:
-            override_settings['blackbird'] = data['blackbird']
         if 'okapi' in data:
             override_settings['okapi'] = data['okapi']
         success, result = test_integration_connection(integration, override_settings=override_settings or None)

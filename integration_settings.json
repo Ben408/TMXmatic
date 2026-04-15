@@ -1,10 +1,4 @@
 {
-  "blackbird": {
-    "enabled": false,
-    "api_key": "",
-    "api_url": "",
-    "project_id": ""
-  },
   "okapi": {
     "enabled": true,
     "api_key": "",
