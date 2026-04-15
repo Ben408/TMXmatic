@@ -4,7 +4,12 @@ from pathlib import Path
 import logging
 from collections import defaultdict
 import lxml.etree as etree
-from .tmx_utils import create_compatible_header
+from .tmx_utils import (
+    create_compatible_header,
+    append_header_notes_from_xml,
+    append_tu_props_from_element,
+    copy_xliff_roundtrip_sidecar,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +110,9 @@ def extract_non_true_duplicates(file_path: str) -> tuple[str, str]:
         
         clean_header = create_compatible_header(minimal_header, "TMX Cleaner", "1.0")
         ntds_header = create_compatible_header(minimal_header, "TMX Cleaner", "1.0")
-        
+        append_header_notes_from_xml(header_elem, clean_header)
+        append_header_notes_from_xml(header_elem, ntds_header)
+
         # Parse TUs manually from XML
         tus = []
         body_elem = tmx_root.find('body')
@@ -119,6 +126,7 @@ def extract_non_true_duplicates(file_path: str) -> tuple[str, str]:
                         # Use PythonTmx's from_element to properly parse inline content
                         tuv = PythonTmx.from_element(tuv_elem)
                         tu.tuvs.append(tuv)
+                append_tu_props_from_element(tu_elem, tu)
                 if len(tu.tuvs) >= 2:  # Only add TUs with both source and target
                     tus.append(tu)
         
@@ -192,7 +200,9 @@ def extract_non_true_duplicates(file_path: str) -> tuple[str, str]:
             ntds_root = PythonTmx.to_element(ntds_tmx, True)
             etree.ElementTree(clean_root).write(str(clean_path), encoding="utf-8", xml_declaration=True)
             etree.ElementTree(ntds_root).write(str(dups_path), encoding="utf-8", xml_declaration=True)
-        
+
+        copy_xliff_roundtrip_sidecar(str(input_path), str(clean_path), str(dups_path))
+
         logger.info(f"Processed {len(clean_segments)+ len(ntds_segments)} TUs: {len(clean_segments)} kept, {len(ntds_segments)} removed")
         
         return str(clean_path), str(dups_path)

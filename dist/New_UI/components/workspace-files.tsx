@@ -96,6 +96,19 @@ export function WorkspaceFiles({
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
+                    {file.processedData && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={async (e) => {
+                          e.stopPropagation()
+                          await onDownloadFile(file.id)
+                        }}
+                        title="Download processed file"
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"
@@ -103,6 +116,7 @@ export function WorkspaceFiles({
                         e.stopPropagation()
                         onRemoveFile(file.id)
                       }}
+                      title="Remove file"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>

@@ -6,11 +6,10 @@ from .remove_empty import empty_targets
 from .remove_duplicates import find_true_duplicates
 from .extract_ntds import extract_non_true_duplicates
 from .remove_sentence import find_sentence_level_segments
-from .clean_mt import clean_tmx_for_mt
+from .tmx_utils import copy_xliff_roundtrip_sidecar, from_tmx
 import pickle
 from multiprocessing import Pool
 import shutil
-from .tmx_utils import from_tmx
 from pathlib import Path
 from typing import List, Tuple, Optional
 import PythonTmx
@@ -110,21 +109,85 @@ def batch_process_1_5(file_path: str) -> Tuple[str, List[str]]:
         logger.error(f"Error in batch process 1-5: {e}")
         raise
 
+
+def _strip_tmx_namespace_tags(root: etree._Element) -> None:
+    """from_element matches tags like 'tmx'; strip namespace prefixes from lxml tree."""
+    for elem in root.iter():
+        if isinstance(elem.tag, str) and elem.tag.startswith("{"):
+            elem.tag = elem.tag.split("}", 1)[1]
+
+
+def _load_tmx_object(file_path: str) -> PythonTmx.Tmx:
+    """Parse TMX file into a PythonTmx.Tmx (Tmx is a dataclass; it is not callable with a path)."""
+    path = str(file_path)
+    tm = None
+    try:
+        tm = etree.parse(path)
+    except Exception:
+        pass
+    if tm is None:
+        try:
+            tm = etree.parse(path, etree.XMLParser(recover=True))
+        except Exception:
+            tm = None
+    if tm is None:
+        for encoding in ("utf-8", "cp1252", "latin-1"):
+            try:
+                parser = etree.XMLParser(encoding=encoding, recover=True)
+                tm = etree.parse(path, parser)
+                if tm is not None and tm.getroot() is not None:
+                    break
+            except Exception:
+                continue
+    if tm is None or tm.getroot() is None:
+        raise ValueError(f"Could not parse TMX file: {path}")
+    root = tm.getroot()
+    _strip_tmx_namespace_tags(root)
+    parsed = PythonTmx.from_element(root, keep_extra=True)
+    if not isinstance(parsed, PythonTmx.Tmx):
+        raise ValueError("TMX root element did not parse to a Tmx object")
+    return parsed
+
+
+def _write_mt_training_outputs(
+    source_tmx_path: str,
+    clean_tmx: PythonTmx.Tmx,
+    tag_removed: List[PythonTmx.Tu],
+    invalid: List[PythonTmx.Tu],
+) -> Tuple[str, str]:
+    """Write MT-ready TMX and a TMX of segments removed by clean_for_mt."""
+    input_path = Path(source_tmx_path)
+    out_dir = input_path.parent
+    mt_path = out_dir / f"mt_{input_path.name}"
+    removed_path = out_dir / f"removed_mt_{input_path.name}"
+
+    clean_root = PythonTmx.to_element(clean_tmx, True)
+    etree.ElementTree(clean_root).write(str(mt_path), encoding="utf-8", xml_declaration=True)
+
+    removed_tmx = PythonTmx.Tmx(header=clean_tmx.header, tus=[*tag_removed, *invalid])
+    removed_root = PythonTmx.to_element(removed_tmx, True)
+    etree.ElementTree(removed_root).write(str(removed_path), encoding="utf-8", xml_declaration=True)
+
+    copy_xliff_roundtrip_sidecar(str(source_tmx_path), str(mt_path), str(removed_path))
+    return str(mt_path), str(removed_path)
+
+
 def batch_process_1_5_9(file_path: str, cutoff_date: Optional[datetime] = None) -> Tuple[str, List[str]]:
     """
-    Process TMX file through steps 1-5 plus step 9:
+    Process TMX file through steps 1-5 plus step 9, then MT training pass:
     1-5. All steps from batch_process_1_5
-    9. Remove old TUs
-    
+    9. Remove old TUs (optional, if cutoff_date)
+    MT. clean_for_mt — tag stripping and MT-oriented filters; writes mt_*.tmx
+
     Args:
         file_path: Path to TMX file
         cutoff_date: Optional date for removing old TUs
-    
+
     Returns:
-        tuple: (Path to final TMX, List of intermediate file paths)
+        tuple: (Path to final MT-ready TMX, List of intermediate file paths)
     """
     logger.info(f"Starting batch process 1-5-9 for: {file_path}")
-    
+
     try:
         # First run steps 1-5
         current_file, intermediate_files = batch_process_1_5(file_path)
@@ -137,8 +200,15 @@ def batch_process_1_5_9(file_path: str, cutoff_date: Optional[datetime] = None) 
         else:
             final_file = current_file
 
-        logger.info("Batch process 1-5-9 completed successfully")
-        return final_file, intermediate_files
+        logger.info("Step MT: clean_for_mt (final pass for MT training)")
+        clean_tmx, tag_removed, invalid = clean_for_mt(final_file)
+        mt_path, removed_mt_path = _write_mt_training_outputs(
+            final_file, clean_tmx, tag_removed, invalid
+        )
+        intermediate_files.append(removed_mt_path)
+
+        logger.info("Batch process 1-5-9 (including MT pass) completed successfully")
+        return mt_path, intermediate_files
 
     except Exception as e:
         logger.error(f"Error in batch process 1-5-9: {e}")
@@ -193,7 +263,7 @@ def clean_for_mt(tmx_file: str) -> Tuple[PythonTmx.Tmx, List[PythonTmx.Tu], List
         tuple: (Cleaned TMX, List of tag-removed TUs, List of short/invalid TUs)
     """
     logger.info(f"Starting MT cleaning for: {tmx_file}")
-    
+
     # Compile regex patterns
     tag_pattern = re.compile(r'<[^>]+>')
     whitespace_pattern = re.compile(r'\s+')
@@ -202,13 +272,13 @@ def clean_for_mt(tmx_file: str) -> Tuple[PythonTmx.Tmx, List[PythonTmx.Tu], List
     number_only_pattern = re.compile(r'^\d+$')
     
     try:
-        tmx = PythonTmx.Tmx(tmx_file)
-        clean_tmx = PythonTmx.Tmx()
-        clean_tmx.header = tmx.header  # Preserve header
-        
+        tmx = _load_tmx_object(tmx_file)
+        clean_tmx = PythonTmx.Tmx(header=tmx.header, tus=[])
+        source_lang = (tmx.header.srclang or "en").lower()
+
         tag_removed_tus = []  # TUs removed due to tag content
         invalid_tus = []      # TUs removed due to length/content
-        
+
         for tu in tmx.tus:
             source_text = ""
             target_text = ""
@@ -225,8 +295,8 @@ def clean_for_mt(tmx_file: str) -> Tuple[PythonTmx.Tmx, List[PythonTmx.Tu], List
                 text = tag_pattern.sub(' ', text)  # Remove XML tags
                 text = whitespace_pattern.sub(' ', text).strip()  # Normalize whitespace
                 
-                # Store based on language
-                if tuv.lang.lower() == "en-us":
+                # Store based on language (source = TMX header srclang)
+                if tuv.lang.lower() == source_lang:
                     source_text = text
                     original_source = original_text
                 else:
@@ -281,14 +351,17 @@ def clean_for_mt(tmx_file: str) -> Tuple[PythonTmx.Tmx, List[PythonTmx.Tu], List
             
             # Create new TU with cleaned content
             clean_tu = PythonTmx.Tu()
-            
-            # Create source TUV
-            src_tuv = PythonTmx.Tuv(xmllang="en-us")
+            tgt_lang = tmx.header.srclang or "en"
+            for tuv in tu.tuvs:
+                if tuv.lang.lower() != source_lang:
+                    tgt_lang = tuv.lang
+                    break
+
+            src_tuv = PythonTmx.Tuv(lang=tmx.header.srclang or "en")
             src_tuv.content = source_text
             clean_tu.tuvs.append(src_tuv)
-            
-            # Create target TUV
-            tgt_tuv = PythonTmx.Tuv(xmllang=tu.tuvs[1].lang)
+
+            tgt_tuv = PythonTmx.Tuv(lang=tgt_lang)
             tgt_tuv.content = target_text
             clean_tu.tuvs.append(tgt_tuv)
             

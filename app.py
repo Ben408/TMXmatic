@@ -11,6 +11,8 @@ from werkzeug.utils import secure_filename
 import secrets
 from pathlib import Path
 import shutil
+import tempfile
+import xml.etree.ElementTree as ET
 
 # CRITICAL: Make Flask completely self-contained and path-independent
 # Get the directory where THIS Flask app is running
@@ -31,6 +33,11 @@ from scripts.batch_process import batch_process_1_5, batch_process_1_5_9
 from scripts.merge_tmx import merge_tmx_files
 from scripts.xliff_operations import leverage_tmx_into_xliff, check_empty_targets
 from scripts.clean_tmx_for_mt import clean_tmx_for_mt
+from scripts.integration_apis import (
+    IntegrationSettings, 
+    get_okapi_client,
+    test_integration_connection
+)
 import json
 from dependency_manager import DependencyManager, DependencyCategories
 
@@ -209,6 +216,102 @@ def allowed_file(filename):
     ALLOWED_EXTENSIONS = {'tmx', 'csv', 'xlsx', 'xls', 'zip', 'tbx', 'xlf', 'xliff'}
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+
+def _collect_output_paths(result_obj):
+    """Flatten mixed operation outputs into file path strings."""
+    if isinstance(result_obj, str):
+        return [result_obj]
+    if isinstance(result_obj, (list, tuple)):
+        paths = []
+        for item in result_obj:
+            paths.extend(_collect_output_paths(item))
+        return paths
+    return []
+
+
+def _effective_cutoff_date(operation: str, form) -> str | None:
+    """Cutoff from form; batch_process_mt only applies it when use_batch_mt_cutoff is set."""
+    raw = (form.get('cutoff_date') or '').strip()
+    if not raw:
+        return None
+    if operation == 'batch_process_mt' and form.get('use_batch_mt_cutoff') != '1':
+        return None
+    if operation in ('remove_old', 'find_date_duplicates', 'batch_process_mt'):
+        return raw
+    return None
+
+
+def _xliff_roundtrip_sidecar_path(tmx_path: str) -> str:
+    """JSON sidecar written when XLIFF is converted to TMX so processors can round-trip even if they strip TU props."""
+    return os.path.splitext(tmx_path)[0] + '.xliff-origin.json'
+
+
+def _write_xliff_roundtrip_sidecar(tmx_path: str, xliff_version: str) -> None:
+    try:
+        with open(_xliff_roundtrip_sidecar_path(tmx_path), 'w', encoding='utf-8') as f:
+            json.dump({'xliff_version': xliff_version}, f)
+    except Exception as e:
+        logger.warning(f"Could not write XLIFF round-trip sidecar for {tmx_path}: {e}")
+
+
+def _read_xliff_version_from_sidecar(tmx_path: str):
+    path = _xliff_roundtrip_sidecar_path(tmx_path)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding='utf-8') as f:
+            data = json.load(f)
+        v = data.get('xliff_version')
+        if v in ('1.2', '2.0', '2.2'):
+            return v
+    except Exception as e:
+        logger.debug(f"Could not read XLIFF sidecar {path}: {e}")
+    return None
+
+
+def _detect_xliff_version_in_tmx(filepath: str):
+    """
+    Find original XLIFF version for round-trip: header notes, TU props, raw XML scan, then sidecar.
+    Returns version string or None if this TMX did not originate from XLIFF (in this app).
+    """
+    import PythonTmx
+
+    try:
+        tmx = PythonTmx.Tmx(filepath)
+        for note in tmx.header.notes:
+            note_text = getattr(note, 'text', None) or getattr(note, 'content', None)
+            if note_text and 'Original XLIFF version' in str(note_text):
+                version = str(note_text).split(':')[-1].strip()
+                if version in ('1.2', '2.0', '2.2'):
+                    return version
+
+        for tu in tmx.tus:
+            for prop in tu.props:
+                if getattr(prop, 'type', None) == 'x-xliff-version':
+                    version = (prop.text or '').strip()
+                    if version in ('1.2', '2.0', '2.2'):
+                        return version
+    except Exception as e:
+        logger.debug(f"PythonTmx scan for XLIFF version failed for {filepath}: {e}")
+
+    try:
+        root = ET.parse(filepath).getroot()
+        for prop in root.iter('prop'):
+            if prop.get('type') == 'x-xliff-version':
+                version = (prop.text or '').strip()
+                if version in ('1.2', '2.0', '2.2'):
+                    return version
+        for note in root.iter('note'):
+            if note.text and 'Original XLIFF version' in note.text:
+                version = note.text.split(':')[-1].strip()
+                if version in ('1.2', '2.0', '2.2'):
+                    return version
+    except Exception as e:
+        logger.debug(f"XML scan for XLIFF version failed for {filepath}: {e}")
+
+    return _read_xliff_version_from_sidecar(filepath)
+
+
 def convert_xliff_to_tmx_if_needed(filepath):
     """Convert XLIFF file to TMX if the file is an XLIFF file, otherwise return original path"""
     if not os.path.exists(filepath):
@@ -219,7 +322,8 @@ def convert_xliff_to_tmx_if_needed(filepath):
     if ext in ['.xlf', '.xliff']:
         try:
             logger.info(f"Converting XLIFF file to TMX: {filepath}")
-            tmx_path, _ = xliff_to_tmx(filepath)
+            tmx_path, xliff_version = xliff_to_tmx(filepath)
+            _write_xliff_roundtrip_sidecar(tmx_path, xliff_version)
             # Remove original XLIFF file after conversion
             try:
                 os.remove(filepath)
@@ -242,44 +346,27 @@ def convert_tmx_to_xliff_if_needed(filepath):
         return filepath
     
     try:
-        # Try to check if TMX contains XLIFF version metadata
-        import PythonTmx
-        tmx = PythonTmx.Tmx(filepath)
-        
-        # Check header notes for original XLIFF version
-        xliff_version = None
-        for note in tmx.header.notes:
-            note_text = None
-            if hasattr(note, 'content') and note.content:
-                note_text = note.content
-            elif hasattr(note, 'text') and note.text:
-                note_text = note.text
-            
-            if note_text and 'Original XLIFF version' in note_text:
-                # Extract version from note text
-                version = note_text.split(':')[-1].strip()
-                if version in ['1.2', '2.0', '2.2']:
-                    xliff_version = version
-                    break
-        
-        # If we found XLIFF version metadata, convert back to XLIFF
+        xliff_version = _detect_xliff_version_in_tmx(filepath)
+
         if xliff_version:
             logger.info(f"Converting TMX file back to XLIFF {xliff_version}: {filepath}")
-            # Generate output filename with .xlf extension
             base_path = os.path.splitext(filepath)[0]
             xliff_path = f"{base_path}.xlf"
             tmx_to_xliff(filepath, xliff_path, xliff_version)
-            # Remove original TMX file after conversion
             try:
                 os.remove(filepath)
             except Exception as e:
                 logger.warning(f"Could not remove TMX file {filepath}: {e}")
+            sidecar = _xliff_roundtrip_sidecar_path(filepath)
+            if os.path.exists(sidecar):
+                try:
+                    os.remove(sidecar)
+                except OSError as e:
+                    logger.warning(f"Could not remove XLIFF sidecar {sidecar}: {e}")
             return xliff_path
     except Exception as e:
-        # If we can't determine or convert, just return original file
         logger.debug(f"Could not convert TMX to XLIFF (file may not be from XLIFF): {e}")
-        pass
-    
+
     return filepath
 
 @app.before_request
@@ -408,10 +495,17 @@ def queue():
 
             for operation in operations:
                 result_list = None
+                effective_cutoff = _effective_cutoff_date(operation, data)
                 if result == None:
-                    result_list = process_file(operation, file_list[0])
+                    if effective_cutoff:
+                        result_list = process_file(operation, file_list[0], cutoff_date=effective_cutoff)
+                    else:
+                        result_list = process_file(operation, file_list[0])
                 else:
-                    result_list = process_file(operation, result)
+                    if effective_cutoff:
+                        result_list = process_file(operation, result, cutoff_date=effective_cutoff)
+                    else:
+                        result_list = process_file(operation, result)
                 if type(result_list) == tuple and len(result_list) > 1 :
                     result = result_list[0]
                     garbage.append(result_list[1])
@@ -423,33 +517,15 @@ def queue():
             result_list2 = [result]
             result_list2.extend(garbage)
 
-            result_list = tuple(result_list)
+            result_list = tuple(result_list2)
             memory_file = io.BytesIO()
             
             with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-                    if operation in ('convert_vatv','clean_mt','merge_tmx'):
-                        if type(result_list) == str:
-                            # Convert TMX back to XLIFF if it was originally XLIFF
-                            file_to_add = convert_tmx_to_xliff_if_needed(result_list)
-                            zf.write(file_to_add, os.path.basename(file_to_add))
-                        else:
-                            file_path = result_list[0]
-                            # Convert TMX back to XLIFF if it was originally XLIFF
-                            file_to_add = convert_tmx_to_xliff_if_needed(file_path)
-                            zf.write(file_to_add, os.path.basename(file_to_add))
-                    else:
-                        for result in result_list:
-                            if len(result) > 2:
-                                if os.path.exists(result):
-                                    # Convert TMX back to XLIFF if it was originally XLIFF
-                                    file_to_add = convert_tmx_to_xliff_if_needed(result)
-                                    zf.write(file_to_add, os.path.basename(file_to_add))
-                            else:
-                                for tm in result:
-                                    if os.path.exists(tm):
-                                        # Convert TMX back to XLIFF if it was originally XLIFF
-                                        file_to_add = convert_tmx_to_xliff_if_needed(tm)
-                                        zf.write(file_to_add, os.path.basename(file_to_add))
+                for file_path in _collect_output_paths(result_list):
+                    if os.path.exists(file_path):
+                        # Convert TMX back to XLIFF if it was originally XLIFF
+                        file_to_add = convert_tmx_to_xliff_if_needed(file_path)
+                        zf.write(file_to_add, os.path.basename(file_to_add))
 
 
 
@@ -545,10 +621,9 @@ def index():
                     else:
                         result_list = []
                         for file in file_list:
-                            # Get cutoff_date if available
-                            cutoff_date = request.form.get('cutoff_date')
-                            if cutoff_date and operation in ['remove_old', 'find_date_duplicates']:
-                                result = process_file(operation, file, cutoff_date=cutoff_date)
+                            effective_cutoff = _effective_cutoff_date(operation, request.form)
+                            if effective_cutoff:
+                                result = process_file(operation, file, cutoff_date=effective_cutoff)
                             else:
                                 result = process_file(operation, file)
                             result_list.append(result)         
@@ -558,10 +633,9 @@ def index():
                     elif operation == 'split_language':
                         result_list = split_by_language(file_list[0])
                     else:
-                        # Get cutoff_date if available
-                        cutoff_date = request.form.get('cutoff_date')
-                        if cutoff_date and operation in ['remove_old', 'find_date_duplicates']:
-                            result_list = process_file(operation, file_list[0], cutoff_date=cutoff_date)
+                        effective_cutoff = _effective_cutoff_date(operation, request.form)
+                        if effective_cutoff:
+                            result_list = process_file(operation, file_list[0], cutoff_date=effective_cutoff)
                         else:
                             result_list = process_file(operation, file_list[0])
                         
@@ -571,30 +645,11 @@ def index():
 
                 memory_file = io.BytesIO()
                 with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-                    if operation in ('convert_vatv','clean_mt','merge_tmx'):
-                        if type(result_list) == str:
-                            # Convert TMX back to XLIFF if it was originally XLIFF
-                            file_to_add = convert_tmx_to_xliff_if_needed(result_list)
-                            zf.write(file_to_add, os.path.basename(file_to_add))
-                        else:
-                            file_path = result_list[0]
+                    for file_path in _collect_output_paths(result_list):
+                        if os.path.exists(file_path):
                             # Convert TMX back to XLIFF if it was originally XLIFF
                             file_to_add = convert_tmx_to_xliff_if_needed(file_path)
                             zf.write(file_to_add, os.path.basename(file_to_add))
-                    else:
-                        print(result_list)
-                        for result in result_list:
-                            if len(result) > 2:
-                                if os.path.exists(result):
-                                    # Convert TMX back to XLIFF if it was originally XLIFF
-                                    file_to_add = convert_tmx_to_xliff_if_needed(result)
-                                    zf.write(file_to_add, os.path.basename(file_to_add))
-                            else:
-                                for tm in result:
-                                    if os.path.exists(tm):
-                                        # Convert TMX back to XLIFF if it was originally XLIFF
-                                        file_to_add = convert_tmx_to_xliff_if_needed(tm)
-                                        zf.write(file_to_add, os.path.basename(file_to_add))
 
                 memory_file.seek(0)
                 # Handle different result types
@@ -660,6 +715,8 @@ def process_file(operation: str, filepath: str, **kwargs) -> str:
         if operation == 'remove_old' and 'cutoff_date' in kwargs:
             result = OPERATIONS[operation](filepath, kwargs['cutoff_date'])
         elif operation == 'find_date_duplicates' and 'cutoff_date' in kwargs:
+            result = OPERATIONS[operation](filepath, kwargs['cutoff_date'])
+        elif operation == 'batch_process_mt' and kwargs.get('cutoff_date'):
             result = OPERATIONS[operation](filepath, kwargs['cutoff_date'])
         else:
             result = OPERATIONS[operation](filepath)
@@ -766,6 +823,231 @@ def xliff_check():
     except Exception as e:
         logger.error(f"Error in xliff_check: {e}")
         return jsonify({'error': str(e)}), 400
+
+@app.route('/api/settings', methods=['GET', 'POST'])
+def settings():
+    """Handle settings retrieval and updates."""
+    try:
+        if request.method == 'GET':
+            # Return current settings
+            settings = IntegrationSettings.load_settings()
+            return jsonify(settings)
+        
+        elif request.method == 'POST':
+            # Update settings
+            data = request.get_json()
+            if not data:
+                return jsonify({'error': 'No data provided'}), 400
+            
+            # Validate and update settings
+            current_settings = IntegrationSettings.load_settings()
+            
+            if 'okapi' in data:
+                current_settings['okapi'].update(data['okapi'])
+            
+            if IntegrationSettings.save_settings(current_settings):
+                return jsonify({'success': True, 'settings': current_settings})
+            else:
+                return jsonify({'error': 'Failed to save settings'}), 500
+                
+    except Exception as e:
+        logger.error(f"Error in settings endpoint: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/upload-to-project', methods=['POST'])
+def upload_to_project():
+    """Upload a processed file back to the source project."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        integration = request.form.get('integration')
+        if not integration:
+            return jsonify({'error': 'Integration name required'}), 400
+        
+        file = request.files['file']
+        project_id = request.form.get('project_id')
+        workspace_id = request.form.get('workspace_id')
+        original_file_id = request.form.get('original_file_id')
+        
+        # Save file temporarily
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+
+        # If this TMX came from an XLF in TMXmatic, convert back to XLIFF before sending to connectors
+        upload_path = convert_tmx_to_xliff_if_needed(filepath)
+
+        try:
+            if integration.lower() == 'okapi':
+                if not workspace_id:
+                    return jsonify({'error': 'Workspace ID required for Okapi'}), 400
+                
+                client = get_okapi_client()
+                if not client:
+                    return jsonify({'error': 'Okapi is not configured'}), 400
+                
+                # Upload file to Okapi
+                success, result = client.upload_file(upload_path, project_id=project_id if project_id else None)
+                if success:
+                    return jsonify({
+                        'success': True,
+                        'message': 'File uploaded successfully to Okapi',
+                        'file_id': result.get('file_id') if isinstance(result, dict) else None
+                    })
+                else:
+                    error_msg = result.get('error', 'Upload failed') if isinstance(result, dict) else str(result)
+                    return jsonify({'error': error_msg}), 500
+            
+            else:
+                return jsonify({'error': f'Unknown integration: {integration}'}), 400
+                
+        finally:
+            for path in {filepath, upload_path}:
+                try:
+                    if path and os.path.exists(path):
+                        os.remove(path)
+                except Exception as e:
+                    logger.warning(f"Could not remove temporary file {path}: {e}")
+                
+    except Exception as e:
+        logger.error(f"Error uploading file to project: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/pull-from-project', methods=['POST'])
+def pull_from_project():
+    """Pull files from a connected project."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        integration = data.get('integration')
+        if not integration:
+            return jsonify({'error': 'Integration name required'}), 400
+        
+        if integration.lower() == 'okapi':
+            workspace_id = data.get('workspace_id')
+            if not workspace_id:
+                return jsonify({'error': 'Workspace ID required for Okapi'}), 400
+            
+            client = get_okapi_client()
+            if not client:
+                return jsonify({'error': 'Okapi is not configured'}), 400
+            
+            # List files in workspace
+            success, result = client.list_files(project_id=data.get('project_id'))
+            if success:
+                return jsonify({
+                    'success': True,
+                    'files': result.get('files', []) if isinstance(result, dict) else []
+                })
+            else:
+                error_msg = result.get('error', 'Failed to list files') if isinstance(result, dict) else str(result)
+                return jsonify({'error': error_msg}), 500
+        
+        else:
+            return jsonify({'error': f'Unknown integration: {integration}'}), 400
+            
+    except Exception as e:
+        logger.error(f"Error pulling files from project: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/download-from-project', methods=['POST'])
+def download_from_project():
+    """Download a single file from Okapi to stream to the client."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        integration = data.get('integration')
+        file_id = data.get('file_id')
+        file_name = data.get('file_name') or 'download'
+        if not integration or not file_id:
+            return jsonify({'error': 'integration and file_id required'}), 400
+        file_name = secure_filename(file_name) or 'download'
+
+        if integration.lower() == 'okapi':
+            workspace_id = data.get('workspace_id')
+            if not workspace_id:
+                return jsonify({'error': 'workspace_id required for Okapi'}), 400
+            client = get_okapi_client()
+            if not client:
+                return jsonify({'error': 'Okapi is not configured'}), 400
+        else:
+            return jsonify({'error': f'Unknown integration: {integration}'}), 400
+
+        fd, temp_path = tempfile.mkstemp(suffix=os.path.splitext(file_name)[1] or '')
+        try:
+            os.close(fd)
+            success, err = client.download_file(file_id, temp_path)
+            if not success:
+                return jsonify({'error': err or 'Download failed'}), 500
+            with open(temp_path, 'rb') as f:
+                data = f.read()
+            return send_file(
+                io.BytesIO(data),
+                as_attachment=True,
+                download_name=file_name,
+                mimetype='application/octet-stream',
+            )
+        finally:
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except Exception as e:
+                    logger.warning(f"Could not remove temp file {temp_path}: {e}")
+
+    except Exception as e:
+        logger.error(f"Error downloading from project: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/settings/test-connection', methods=['POST'])
+def test_connection():
+    """Test connection to an integration service."""
+    try:
+        data = request.get_json()
+        if not data or 'integration' not in data:
+            return jsonify({'error': 'Integration name required'}), 400
+        
+        integration = data['integration'].lower()
+        # Use credentials from request body if provided (e.g. current form values)
+        override_settings = {}
+        if 'okapi' in data:
+            override_settings['okapi'] = data['okapi']
+        success, result = test_integration_connection(integration, override_settings=override_settings or None)
+        
+        # Build response with error details
+        response_data = {
+            'success': success,
+        }
+        
+        if success:
+            # Success case - result is a string message
+            response_data['message'] = result if isinstance(result, str) else "Connection successful"
+        else:
+            # Error case - result might be a dict with error details or a string
+            if isinstance(result, dict):
+                response_data['message'] = result.get('error', result.get('message', 'Connection failed'))
+                response_data['error'] = result.get('error', response_data['message'])
+                if 'status_code' in result:
+                    response_data['status_code'] = result['status_code']
+            else:
+                # result is a string
+                response_data['message'] = result or "Connection failed"
+                response_data['error'] = response_data['message']
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        logger.error(f"Error testing connection: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Failed to test connection',
+            'error': str(e)
+        }), 500
 
 def is_api_request():
     # Checks if the request expects JSON (AJAX/fetch) or is a form POST from the browser

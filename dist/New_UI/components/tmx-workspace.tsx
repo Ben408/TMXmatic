@@ -1,15 +1,23 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState } from "react"
+import { format } from "date-fns"
 import { FileUploader } from "./file-uploader"
 import { WorkspaceFiles } from "./workspace-files"
 import { OperationsPanel } from "./operations-panel"
 import { ProcessingHistory } from "./processing-history"
 import { Button } from "@/components/ui/button"
-import { Download, AlertCircle } from "lucide-react"
+import { Download, AlertCircle, Upload } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { XLIFFStatsDialog } from "./xliff-stats-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { ArrowUp, ArrowDown, Trash2 } from "lucide-react"
 import { Loader2 } from "lucide-react"
@@ -22,9 +30,12 @@ import {
 import JSZip from "jszip"
 
 export type XLIFFStats = {
-  totalSegments: number
-  emptyTargets: number
-  percentage: number
+  translations_found?: number
+  updates_made?: number
+  remaining_empty?: number
+  total_segments?: number
+  empty_segments?: number
+  completion_rate?: number
 }
 
 export type WorkspaceFile = {
@@ -40,6 +51,12 @@ export type WorkspaceFile = {
   relatedFiles?: {
     tmxFile?: string
     xliffFile?: string
+  }
+  sourceProject?: {
+    integration: "okapi"
+    projectId?: string
+    workspaceId?: string
+    fileId?: string
   }
 }
 
@@ -114,7 +131,7 @@ export const OPERATIONS: Operation[] = [
   { 
     id: "batch_process_mt", 
     name: "Batch Clean TMX for MT",
-    description: "Apply multiple cleaning operations for machine translation."
+    description: "Batch clean (empty targets, duplicates, sentence filter), optional old-TU cutoff, then clean_for_mt for MT training output."
   },
   { 
     id: "xliff_tmx_leverage", 
@@ -148,11 +165,55 @@ export function TMXWorkspace() {
   const [currentOperation, setCurrentOperation] = useState<"leverage" | "check" | null>(null)
   const [queuedOperations, setQueuedOperations] = useState<string[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
+  const [uploadedCount, setUploadedCount] = useState(0)
+  const [uploadTargetFileIds, setUploadTargetFileIds] = useState<string[]>([])
+  const [cutoffDate, setCutoffDate] = useState<Date>()
+  const [batchMtCutoffEnabled, setBatchMtCutoffEnabled] = useState(false)
 
   const selectedFiles = files.filter(file => selectedFileIds.includes(file.id))
 
-  const handleFilesAdded = (newFiles: File[]) => {
-    const workspaceFiles = newFiles.map((file) => ({
+  const handleBatchMtCutoffEnabledChange = (enabled: boolean) => {
+    setBatchMtCutoffEnabled(enabled)
+    if (!enabled) setCutoffDate(undefined)
+  }
+
+  const appendCutoffDateIfApplicable = (formData: FormData, primaryOperationId: string) => {
+    const ops = queuedOperations.length > 0 ? queuedOperations : [primaryOperationId]
+    const cutoffRaw = cutoffDate ? format(cutoffDate, "yyyy-MM-dd") : null
+    if (!cutoffRaw) return
+
+    const needsMandatoryCutoff = ops.some(
+      (op) => op === "remove_old" || op === "find_date_duplicates",
+    )
+    if (needsMandatoryCutoff) {
+      formData.append("cutoff_date", cutoffRaw)
+      return
+    }
+
+    if (ops.some((op) => op === "batch_process_mt") && batchMtCutoffEnabled) {
+      formData.append("use_batch_mt_cutoff", "1")
+      formData.append("cutoff_date", cutoffRaw)
+    }
+  }
+
+  const handleFilesAdded = (
+    newFiles: File[],
+    sourceProject?:
+      | {
+          integration: "okapi"
+          projectId?: string
+          workspaceId?: string
+          fileId?: string
+        }
+      | {
+          integration: "okapi"
+          projectId?: string
+          workspaceId?: string
+          fileId?: string
+        }[]
+  ) => {
+    const workspaceFiles = newFiles.map((file, i) => ({
       id: crypto.randomUUID(),
       name: file.name,
       type: file.type,
@@ -162,6 +223,7 @@ export function TMXWorkspace() {
       status: "idle" as const,
       operations: [],
       relatedFiles: {},
+      sourceProject: Array.isArray(sourceProject) ? sourceProject[i] : sourceProject,
     }))
 
     setFiles((prev) => [...prev, ...workspaceFiles])
@@ -170,9 +232,15 @@ export function TMXWorkspace() {
       setSelectedFileIds([workspaceFiles[0].id])
     }
 
+    const sourceLabel = Array.isArray(sourceProject)
+      ? sourceProject[0]?.integration
+      : sourceProject?.integration
+
     toast({
       title: "Files added",
-      description: `${newFiles.length} file(s) added to workspace`,
+      description: `${newFiles.length} file(s) added to workspace${
+        sourceLabel ? ` from ${sourceLabel}` : ""
+      }`,
     })
   }
 
@@ -222,6 +290,7 @@ export function TMXWorkspace() {
         } else {
           formData.append('operation', operationId)
         }
+        appendCutoffDateIfApplicable(formData, operationId)
         console.log(`Sending merge_tmx request to /api/${operationId}`, {
           operations: queuedOperations.length > 0 ? queuedOperations : [operationId],
           files: selectedFileIds.map(id => files.find(f => f.id === id)?.name)
@@ -318,6 +387,7 @@ export function TMXWorkspace() {
         if (operationId === 'split_size' && size) {
           formData.append('size', size.toString())
         }
+        appendCutoffDateIfApplicable(formData, operationId)
         console.log(`Sending request to /api/${operationId}`, {
           operations: queuedOperations.length > 0 ? queuedOperations : [operationId],
           file: file.name,
@@ -562,6 +632,7 @@ export function TMXWorkspace() {
         const formData = new FormData()
         formData.append('file', file.originalData)
         formData.append('operations', JSON.stringify(queuedOperations))
+        appendCutoffDateIfApplicable(formData, queuedOperations[0] ?? "")
 
         console.log(`Sending queue request to /queue/`, {
           operations: queuedOperations,
@@ -653,6 +724,120 @@ export function TMXWorkspace() {
     ))
   }
 
+  const handleUploadToProject = async (fileId: string) => {
+    const file = files.find((f) => f.id === fileId)
+    if (!file || !file.processedData || !file.sourceProject) {
+      toast({
+        title: "Error",
+        description: "File is not ready for upload or missing source project information",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      // Check if processedData is a ZIP file
+      const arrayBuffer = await file.processedData.arrayBuffer()
+      const uint8Array = new Uint8Array(arrayBuffer)
+      const isZipFile = uint8Array.length >= 4 && 
+                       uint8Array[0] === 0x50 && 
+                       uint8Array[1] === 0x4B && 
+                       uint8Array[2] === 0x03 && 
+                       uint8Array[3] === 0x04
+
+      let fileToUpload = file.processedData
+      let fileName = file.name
+
+      // If it's a ZIP file, we need to extract the "clean" file
+      if (isZipFile) {
+        const JSZip = (await import('jszip')).default
+        const zip = await JSZip.loadAsync(file.processedData)
+        const fileNames = Object.keys(zip.files)
+        
+        // Look for the clean file (usually has "clean" or "processed" in the name, or is the non-duplicate file)
+        // Priority: files with "clean" > files with "processed" > first file that's not a duplicate/garbage file
+        let cleanFileName = fileNames.find(name => 
+          name.toLowerCase().includes('clean') && !name.toLowerCase().includes('duplicate')
+        ) || fileNames.find(name => 
+          name.toLowerCase().includes('processed') && !name.toLowerCase().includes('duplicate')
+        ) || fileNames.find(name => 
+          !name.toLowerCase().includes('duplicate') && 
+          !name.toLowerCase().includes('garbage') &&
+          !name.toLowerCase().includes('old')
+        ) || fileNames[0]
+
+        if (cleanFileName) {
+          const cleanFile = zip.files[cleanFileName]
+          if (cleanFile && !cleanFile.dir) {
+            const cleanFileData = await cleanFile.async('blob')
+            fileToUpload = new File([cleanFileData], cleanFileName, { type: 'application/octet-stream' })
+            fileName = cleanFileName
+          }
+        }
+      }
+
+      const formData = new FormData()
+      formData.append('file', fileToUpload, fileName)
+      formData.append('integration', file.sourceProject.integration)
+      if (file.sourceProject.projectId) {
+        formData.append('project_id', file.sourceProject.projectId)
+      }
+      if (file.sourceProject.workspaceId) {
+        formData.append('workspace_id', file.sourceProject.workspaceId)
+      }
+      if (file.sourceProject.fileId) {
+        formData.append('original_file_id', file.sourceProject.fileId)
+      }
+
+      const response = await fetch('http://127.0.0.1:5000/api/upload-to-project', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to upload file to project')
+      }
+
+      const result = await response.json()
+
+      setUploadedCount((prev) => prev + 1)
+    } catch (error) {
+      console.error("Error uploading file to project:", error)
+      toast({
+        title: "Upload failed",
+        description: error instanceof Error ? error.message : "Failed to upload file to project",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const filesWithUpload = files.filter((f) => f.processedData && f.sourceProject)
+  const runUploadWithModal = async (fileIds: string[]) => {
+    if (fileIds.length === 0) return
+    setUploadedCount(0)
+    setUploadTargetFileIds(fileIds)
+    setUploadDialogOpen(true)
+    for (const fileId of fileIds) {
+      await handleUploadToProject(fileId)
+    }
+  }
+  const handleBulkUploadToProject = async () => {
+    await runUploadWithModal(filesWithUpload.map((f) => f.id))
+  }
+  const handleSingleUploadToProject = async (fileId: string) => {
+    await runUploadWithModal([fileId])
+  }
+
+  const queueNeedsMandatoryCutoff =
+    (queuedOperations.includes("remove_old") || queuedOperations.includes("find_date_duplicates")) &&
+    !cutoffDate
+
+  const queueBatchCutoffIncomplete =
+    queuedOperations.includes("batch_process_mt") &&
+    batchMtCutoffEnabled &&
+    !cutoffDate
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2 space-y-6">
@@ -684,6 +869,10 @@ export function TMXWorkspace() {
             queuedOperations={queuedOperations}
             onQueueUpdate={setQueuedOperations}
             onClearSelection={() => setSelectedFileIds([])}
+            cutoffDate={cutoffDate}
+            onCutoffDateChange={setCutoffDate}
+            batchMtCutoffEnabled={batchMtCutoffEnabled}
+            onBatchMtCutoffEnabledChange={handleBatchMtCutoffEnabledChange}
           />
         )}
       </div>
@@ -696,13 +885,25 @@ export function TMXWorkspace() {
             <p>Selected files: {selectedFileIds.length}</p>
             <p>Operations applied: {files.reduce((acc, file) => acc + file.operations.length, 0)}</p>
             {files.some(file => file.processedData) && (
-              <Button
-                className="w-full mt-4"
-                onClick={handleBulkDownload}
-              >
-                <Download className="mr-2 h-4 w-4" />
-                Download All Processed Files
-              </Button>
+              <div className="flex gap-2 mt-4">
+                <Button
+                  className="flex-1"
+                  onClick={handleBulkDownload}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Download All
+                </Button>
+                {filesWithUpload.length > 0 && (
+                  <Button
+                    className="flex-1"
+                    variant="outline"
+                    onClick={handleBulkUploadToProject}
+                  >
+                    <Upload className="mr-2 h-4 w-4" />
+                    Upload All
+                  </Button>
+                )}
+              </div>
             )}
             {selectedFiles.length > 0 && (
               <div className="mt-4">
@@ -713,14 +914,28 @@ export function TMXWorkspace() {
                     <p className="text-sm text-muted-foreground">
                       {(file.size / 1024).toFixed(2)} KB • {getFileTypeLabel(file.name)}
                     </p>
-                    <Button
-                      className="mt-2 w-full"
-                      onClick={() => handleDownloadFile(file.id)}
-                      disabled={!file.processedData}
-                    >
-                      <Download className="mr-2 h-4 w-4" />
-                      Download Processed File
-                    </Button>
+                    <div className="flex gap-2 mt-2">
+                      <Button
+                        className="flex-1"
+                        size="sm"
+                        onClick={() => handleDownloadFile(file.id)}
+                        disabled={!file.processedData}
+                      >
+                        <Download className="mr-1 h-3 w-3" />
+                        Download
+                      </Button>
+                      {file.processedData && file.sourceProject && (
+                        <Button
+                          className="flex-1"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleSingleUploadToProject(file.id)}
+                        >
+                          <Upload className="mr-1 h-3 w-3" />
+                          Upload
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -787,7 +1002,9 @@ export function TMXWorkspace() {
             </div>
             <Button
               onClick={handleProcessQueue}
-              disabled={isProcessing}
+              disabled={
+                isProcessing || queueNeedsMandatoryCutoff || queueBatchCutoffIncomplete
+              }
               className="w-full mt-4"
             >
               {isProcessing ? (
@@ -814,6 +1031,33 @@ export function TMXWorkspace() {
           operation={currentOperation || "check"}
         />
       )}
+
+      <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Uploading to project</DialogTitle>
+            <DialogDescription>
+              {uploadTargetFileIds.length > 0
+                ? `Uploaded ${uploadedCount} of ${uploadTargetFileIds.length} file(s).`
+                : "No files available for upload."}
+            </DialogDescription>
+          </DialogHeader>
+          {uploadTargetFileIds.length > 0 && uploadedCount >= uploadTargetFileIds.length && (
+            <p className="text-sm text-muted-foreground mt-2">
+              {uploadedCount} file(s) uploaded.
+            </p>
+          )}
+          <div className="flex justify-end mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setUploadDialogOpen(false)}
+              disabled={uploadTargetFileIds.length > 0 && uploadedCount < uploadTargetFileIds.length}
+            >
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

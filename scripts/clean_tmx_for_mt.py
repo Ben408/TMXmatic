@@ -1,14 +1,96 @@
-import PythonTmx
-from datetime import datetime
-from pathlib import Path
 import logging
+import os
 import re
+import shutil
+from pathlib import Path
+
+import PythonTmx
 import lxml.etree as etree
-from .tmx_utils import create_compatible_header
+
+from .tmx_utils import (
+    append_header_notes_from_xml,
+    append_tu_props_from_element,
+    children_by_local,
+    copy_xliff_roundtrip_sidecar,
+    create_compatible_header,
+    element_inner_text,
+)
 
 logger = logging.getLogger(__name__)
 
-def clean_tmx_for_mt(file_path: str) -> str:
+
+class OperationLog:
+    def __init__(self):
+        self.messages = []
+
+    def info(self, msg):
+        self.messages.append(("info", msg))
+
+    def error(self, msg):
+        self.messages.append(("error", msg))
+
+    def get_log(self):
+        return self.messages
+
+
+def _build_minimal_header_from_xml(header_elem: etree.ElementBase) -> PythonTmx.Header:
+    header_attrs = {}
+    for attr_name in ['creationtool', 'creationtoolversion', 'adminlang', 'srclang', 'segtype', 'datatype']:
+        if attr_name in header_elem.attrib:
+            header_attrs[attr_name] = header_elem.attrib[attr_name]
+
+    segtype_str = header_attrs.get('segtype', 'sentence')
+    if segtype_str == 'sentence':
+        segtype_enum = PythonTmx.SEGTYPE.SENTENCE
+    elif segtype_str == 'paragraph':
+        segtype_enum = PythonTmx.SEGTYPE.PARAGRAPH
+    elif segtype_str == 'phrase':
+        segtype_enum = PythonTmx.SEGTYPE.PHRASE
+    elif segtype_str == 'block':
+        segtype_enum = PythonTmx.SEGTYPE.BLOCK
+    else:
+        segtype_enum = PythonTmx.SEGTYPE.SENTENCE
+
+    return PythonTmx.Header(
+        creationtool=header_attrs.get('creationtool', 'Unknown Tool'),
+        creationtoolversion=header_attrs.get('creationtoolversion', '1.0'),
+        adminlang=header_attrs.get('adminlang', 'en'),
+        srclang=header_attrs.get('srclang', 'en'),
+        segtype=segtype_enum,
+        datatype=header_attrs.get('datatype', 'xml'),
+        tmf="tmx",
+        encoding="utf8",
+    )
+
+
+def _tu_plain_text_by_lang(tu: PythonTmx.Tu, source_lang: str) -> tuple[str, str]:
+    source_text = ""
+    target_text = ""
+    for tuv in tu.tuvs:
+        text = ''.join(part for part in tuv.content if isinstance(part, str)).strip()
+        if tuv.lang.lower() == source_lang.lower():
+            source_text = text
+        else:
+            target_text = text
+    return source_text, target_text
+
+
+def check_balanced_pairs(text: str) -> bool:
+    """Check if parentheses and brackets are balanced in text."""
+    stack = []
+    pairs = {')': '(', ']': '[', '}': '{'}
+
+    for char in text:
+        if char in '([{':
+            stack.append(char)
+        elif char in ')]}':
+            if not stack or stack.pop() != pairs[char]:
+                return False
+
+    return len(stack) == 0
+
+
+def clean_tmx_for_mt(file_path: str) -> tuple[str, str]:
     """
     Clean TMX file for machine translation by:
     1. Removing tags and placeholders
@@ -20,14 +102,16 @@ def clean_tmx_for_mt(file_path: str) -> str:
         file_path: Path to TMX file
     
     Returns:
-        str: Path to cleaned TMX file
+        tuple: (Path to cleaned TMX, Path to removed TMX)
     """
     logger.info(f"Starting MT cleaning for: {file_path}")
     
     try:
-        # Create output path
+        # Create output paths similar to other cleaning scripts
         input_path = Path(file_path)
-        output_path = input_path.parent / f"{input_path.name}"
+        output_dir = input_path.parent
+        clean_path = output_dir / f"clean_{input_path.name}"
+        removed_path = output_dir / f"removed_{input_path.name}"
       
         # Load TMX file using lxml XML parsing (more reliable)
         # Try multiple parsing approaches
@@ -69,111 +153,72 @@ def clean_tmx_for_mt(file_path: str) -> str:
         
         tmx_root = tm.getroot()
         
-        # Extract header attributes from XML
-        header_elem = tmx_root.find('header')
+        # Extract header attributes from XML (namespace-agnostic)
+        header_elems = children_by_local(tmx_root, 'header')
+        header_elem = header_elems[0] if header_elems else None
         if header_elem is None:
             raise ValueError("No header element found in TMX file")
-        
-        # Create a minimal header object for compatibility with required parameters
-        header_attrs = {}
-        for attr_name in ['creationtool', 'creationtoolversion', 'adminlang', 'srclang', 'segtype', 'datatype']:
-            if attr_name in header_elem.attrib:
-                header_attrs[attr_name] = header_elem.attrib[attr_name]
-        
-        # Convert string segtype to enum if needed
-        segtype_str = header_attrs.get('segtype', 'sentence')
-        if segtype_str == 'sentence':
-            segtype_enum = PythonTmx.SEGTYPE.SENTENCE
-        elif segtype_str == 'paragraph':
-            segtype_enum = PythonTmx.SEGTYPE.PARAGRAPH
-        elif segtype_str == 'phrase':
-            segtype_enum = PythonTmx.SEGTYPE.PHRASE
-        elif segtype_str == 'block':
-            segtype_enum = PythonTmx.SEGTYPE.BLOCK
-        else:
-            segtype_enum = PythonTmx.SEGTYPE.SENTENCE  # Default fallback
-        
-        minimal_header = PythonTmx.Header(
-            creationtool=header_attrs.get('creationtool', 'Unknown Tool'),
-            creationtoolversion=header_attrs.get('creationtoolversion', '1.0'),
-            adminlang=header_attrs.get('adminlang', 'en'),
-            srclang=header_attrs.get('srclang', 'en'),
-            segtype=segtype_enum,
-            datatype=header_attrs.get('datatype', 'xml'),
-            tmf="tmx",  # Required parameter
-            encoding="utf8"  # Required parameter
-        )
-        
+
+        minimal_header = _build_minimal_header_from_xml(header_elem)
         clean_header = create_compatible_header(minimal_header, "TMX MT Cleaner", "1.0")
-        
-        # Parse TUs manually from XML
+        removed_header = create_compatible_header(minimal_header, "TMX MT Cleaner", "1.0")
+        append_header_notes_from_xml(header_elem, clean_header)
+        append_header_notes_from_xml(header_elem, removed_header)
+
+        # Parse TUs manually from XML (namespace-agnostic; preserve props)
         tus = []
-        body_elem = tmx_root.find('body')
+        body_elems = children_by_local(tmx_root, 'body')
+        body_elem = body_elems[0] if body_elems else None
         if body_elem is not None:
-            for tu_elem in body_elem.findall('tu'):
+            for tu_elem in children_by_local(body_elem, 'tu'):
                 tu = PythonTmx.Tu()
-                for tuv_elem in tu_elem.findall('tuv'):
+                for tuv_elem in children_by_local(tu_elem, 'tuv'):
                     lang = tuv_elem.get('{http://www.w3.org/XML/1998/namespace}lang', 'en')
-                    seg_elem = tuv_elem.find('seg')
-                    if seg_elem is not None and seg_elem.text:
+                    seg_elems = children_by_local(tuv_elem, 'seg')
+                    seg_elem = seg_elems[0] if seg_elems else None
+                    if seg_elem is not None:
                         tuv = PythonTmx.Tuv(lang=lang)
-                        tuv.content = seg_elem.text
+                        tuv.content = element_inner_text(seg_elem)
                         tu.tuvs.append(tuv)
+                append_tu_props_from_element(tu_elem, tu)
                 if len(tu.tuvs) >= 2:  # Only add TUs with both source and target
                     tus.append(tu)
         
         # Create TMX object with correct constructor
         tmx = PythonTmx.Tmx(header=clean_header, tus=tus)
 
-        # Create clean TMX using correct constructor
+        # Create clean/removed TMX objects
         clean_tmx = PythonTmx.Tmx(header=clean_header, tus=[])
+        removed_tmx = PythonTmx.Tmx(header=removed_header, tus=[])
 
         # Compile regex patterns
         tag_pattern = re.compile(r'(<[^>]+>|(Ept|Bpt|It|Hi|Ut|Ph)\(.*?\))')
         placeholder_pattern = re.compile(r'\{[0-9]+\}|\[\[.*?\]\]|\{\{.*?\}\}')
         special_chars_pattern = re.compile(r'[^a-zA-Z0-9\s\.,;:!?\'\"\-\(\)\[\]{}]')
         
-        total_tus = kept_tus = 0
+        total_tus = kept_tus = removed_tus = 0
+        source_lang = (tmx.header.srclang or 'en').lower()
 
         # Process TUs
         for tu in tmx.tus:
             total_tus += 1
             keep_tu = True
-            source_text = target_text = ""
+            source_text, target_text = _tu_plain_text_by_lang(tu, source_lang)
             
-            # Check each TUV
-            for tuv in tu.tuvs:
-                if not tuv.content:
-                    keep_tu = False
-                    break
-                concat_text = ""
-                for part in tuv.content:
-                    if type(part) == str:
-                        concat_text = concat_text + part
+            if not source_text or not target_text:
+                keep_tu = False
 
-                text = concat_text.strip()
-                # Store source/target for comparison
-                if tuv.lang == tmx.header.srclang:
-                    source_text = text
-                else:
-                    target_text = text
-
-                # Remove tags and placeholders
-                text = tag_pattern.sub(' ', text)
-                text = placeholder_pattern.sub(' ', text)
-                
-                # Check for special characters
-                if special_chars_pattern.search(text):
+            # Check each TUV text
+            for text in (source_text, target_text):
+                normalized = tag_pattern.sub(' ', text)
+                normalized = placeholder_pattern.sub(' ', normalized)
+                if special_chars_pattern.search(normalized):
                     keep_tu = False
                     break
-                
-                # Check for balanced parentheses and brackets
-                if not check_balanced_pairs(text):
+                if not check_balanced_pairs(normalized):
                     keep_tu = False
                     break
-                
-                # Check for minimum content
-                words = [w for w in text.split() if len(w) > 1]
+                words = [w for w in normalized.split() if len(w) > 1]
                 if len(words) < 2:
                     keep_tu = False
                     break
@@ -193,43 +238,96 @@ def clean_tmx_for_mt(file_path: str) -> str:
             if keep_tu:
                 clean_tmx.tus.append(tu)
                 kept_tus += 1
+            else:
+                removed_tmx.tus.append(tu)
+                removed_tus += 1
         
-        # Save cleaned TMX
-        # Save TMX file using the correct method
-        try:
-            # Use the to_tmx method which should exist
-            clean_tmx.to_tmx(str(output_path))
-        except AttributeError:
-            # Fallback: use lxml to write the XML directly
-            clean_root = PythonTmx.to_element(clean_tmx, True)
-            etree.ElementTree(clean_root).write(str(output_path), encoding="utf-8", xml_declaration=True)
-        logger.info(f"Cleaned {total_tus} TUs: kept {kept_tus}, removed {total_tus - kept_tus}")
-        return str(output_path), str(input_path)
+        clean_root = PythonTmx.to_element(clean_tmx, True)
+        removed_root = PythonTmx.to_element(removed_tmx, True)
+        etree.ElementTree(clean_root).write(str(clean_path), encoding="utf-8", xml_declaration=True)
+        etree.ElementTree(removed_root).write(str(removed_path), encoding="utf-8", xml_declaration=True)
+        copy_xliff_roundtrip_sidecar(str(input_path), str(clean_path), str(removed_path))
+
+        logger.info(f"Cleaned {total_tus} TUs: kept {kept_tus}, removed {removed_tus}")
+        return str(clean_path), str(removed_path)
 
     except Exception as e:
         logger.error(f"Error cleaning TMX for MT: {e}")
         raise
 
-def check_balanced_pairs(text: str) -> bool:
-    """Check if parentheses and brackets are balanced in text."""
-    stack = []
-    pairs = {')': '(', ']': '[', '}': '{'}
-    
-    for char in text:
-        if char in '([{':
-            stack.append(char)
-        elif char in ')]}':
-            if not stack or stack.pop() != pairs[char]:
-                return False
-    
-    return len(stack) == 0
+
+def clean_tmx_for_mt_legacy(
+    source_file, target_file=None, logger=None
+) -> tuple[str, int, int]:
+    """
+    Optional path + logging wrapper around clean_tmx_for_mt (formerly scripts.clean_mt).
+
+    Returns (target_file_path, processed_count, kept_count); counts are 0,0 for compatibility.
+    """
+    if logger is None:
+        logger = OperationLog()
+
+    try:
+        clean_path, _removed_path = clean_tmx_for_mt(source_file)
+        if target_file and os.path.abspath(target_file) != os.path.abspath(clean_path):
+            try:
+                shutil.copy2(clean_path, target_file)
+                clean_path = target_file
+            except OSError as copy_error:
+                logger.error(f"Error copying cleaned file to target path: {copy_error}")
+                raise
+        return clean_path, 0, 0
+    except Exception as e:
+        logger.error(f"Error processing file: {str(e)}")
+        raise
+
+
+def process_directory(directory):
+    """
+    Process all TMX files in a directory.
+
+    Returns:
+        tuple: (results, log_messages)
+            results: list of (target_file, processed_count, cleaned_count)
+            log_messages: list of (level, message) tuples
+    """
+    logger = OperationLog()
+    results = []
+
+    try:
+        for filename in os.listdir(directory):
+            if filename.endswith('.tmx'):
+                source_file = os.path.join(directory, filename)
+                logger.info(f"Processing file: {filename}")
+                result = clean_tmx_for_mt_legacy(source_file, logger=logger)
+                results.append(result)
+        return results, logger.get_log()
+    except Exception as e:
+        logger.error(f"Error processing directory: {str(e)}")
+        raise
+
 
 if __name__ == "__main__":
-    # Example usage when run directly
-    file_path = input("Enter TMX file path: ")
+    mode = input("[f] single TMX file or [d] directory? ").strip().lower()[:1]
     try:
-        output_file = clean_tmx_for_mt(file_path)
-        print(f"Cleaned TMX created: {output_file}")
+        if mode == "d":
+            directory = input("Enter directory path containing TMX files: ").strip()
+            print("WARNING: This process removes information needed for translation leveraging.")
+            print("Use only for preparing MT training data.")
+            confirm = input("Continue? (y/N): ")
+            if confirm.lower() != "y":
+                raise SystemExit(0)
+            results, log = process_directory(directory)
+            for target, processed, cleaned in results:
+                print(f"Created cleaned TMX file: {target}")
+                print(f"Processed {processed} entries, kept {cleaned} entries")
+            for level, message in log:
+                print(f"{level.upper()}: {message}")
+        else:
+            file_path = input("Enter TMX file path: ").strip()
+            clean_file, removed_file = clean_tmx_for_mt(file_path)
+            print(f"Cleaned TMX created: {clean_file}")
+            print(f"Removed segments TMX: {removed_file}")
     except Exception as e:
         print(f"ERROR: {e}")
-        exit(1) 
+        exit(1)

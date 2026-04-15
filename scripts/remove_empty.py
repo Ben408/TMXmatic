@@ -1,9 +1,15 @@
 import PythonTmx
-from datetime import datetime
 from pathlib import Path
 import logging
 import lxml.etree as etree
-from .tmx_utils import create_compatible_header
+from .tmx_utils import (
+    append_header_notes_from_xml,
+    append_tu_props_from_element,
+    children_by_local,
+    copy_xliff_roundtrip_sidecar,
+    create_compatible_header,
+    element_inner_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,8 +72,9 @@ def empty_targets(file_path: str) -> tuple[str, str]:
         
         tmx_root = tm.getroot()
         
-        # Extract header attributes from XML
-        header_elem = tmx_root.find('header')
+        # Extract header attributes from XML (namespace-agnostic)
+        header_elems = children_by_local(tmx_root, 'header')
+        header_elem = header_elems[0] if header_elems else None
         if header_elem is None:
             raise ValueError("No header element found in TMX file")
         
@@ -104,20 +111,25 @@ def empty_targets(file_path: str) -> tuple[str, str]:
         
         clean_header = create_compatible_header(minimal_header, "TMX Cleaner", "1.0")
         empty_header = create_compatible_header(minimal_header, "TMX Cleaner", "1.0")
-        
-        # Parse TUs manually from XML
+        append_header_notes_from_xml(header_elem, clean_header)
+        append_header_notes_from_xml(header_elem, empty_header)
+
+        # Parse TUs manually from XML (namespace-agnostic; preserve all <prop> including XLIFF markup)
         tus = []
-        body_elem = tmx_root.find('body')
+        body_elems = children_by_local(tmx_root, 'body')
+        body_elem = body_elems[0] if body_elems else None
         if body_elem is not None:
-            for tu_elem in body_elem.findall('tu'):
+            for tu_elem in children_by_local(body_elem, 'tu'):
                 tu = PythonTmx.Tu()
-                for tuv_elem in tu_elem.findall('tuv'):
+                for tuv_elem in children_by_local(tu_elem, 'tuv'):
                     lang = tuv_elem.get('{http://www.w3.org/XML/1998/namespace}lang', 'en')
-                    seg_elem = tuv_elem.find('seg')
-                    if seg_elem is not None and seg_elem.text:
+                    seg_elems = children_by_local(tuv_elem, 'seg')
+                    seg_elem = seg_elems[0] if seg_elems else None
+                    if seg_elem is not None:
                         tuv = PythonTmx.Tuv(lang=lang)
-                        tuv.content = seg_elem.text
+                        tuv.content = element_inner_text(seg_elem)
                         tu.tuvs.append(tuv)
+                append_tu_props_from_element(tu_elem, tu)
                 if len(tu.tuvs) >= 2:  # Only add TUs with both source and target
                     tus.append(tu)
         
@@ -168,7 +180,9 @@ def empty_targets(file_path: str) -> tuple[str, str]:
         empty_root = PythonTmx.to_element(empty_tmx, True)
         etree.ElementTree(clean_root).write(str(clean_path), encoding="utf-8", xml_declaration=True)
         etree.ElementTree(empty_root).write(str(empty_path), encoding="utf-8", xml_declaration=True)
-        
+
+        copy_xliff_roundtrip_sidecar(str(input_path), str(clean_path), str(empty_path))
+
         logger.info(f"Processed {clean_count + empty_count} TUs: {clean_count} kept, {empty_count} removed")
         return str(clean_path), str(empty_path)
 
