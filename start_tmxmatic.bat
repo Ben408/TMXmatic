@@ -48,10 +48,12 @@ exit /b 1
 :have_python
 echo Using Python: %PY_CMD%
 
-echo Running dependency manager...
+echo Installing UI dependencies from package.json - Node.js/npm must be on PATH.
 %PY_CMD% "dependency_manager.py"
 if errorlevel 1 (
-  echo WARNING: dependency_manager.py encountered an error. Continuing...
+  echo ERROR: UI dependency install failed. Install Node.js LTS so npm is on PATH, then re-run.
+  pause
+  exit /b 1
 )
 
 if not exist ".venv\Scripts\python.exe" (

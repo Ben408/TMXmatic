@@ -1,207 +1,166 @@
-# TMX Processing Tool
+# TMXmatic — TMX processing tool
 
-A web-based tool for processing TMX (Translation Memory eXchange) and XLIFF files, with a focus on cleaning and managing translation memory data.
+Web-based tooling for processing **TMX** (Translation Memory eXchange), **XLIFF**, and related files, with a focus on cleaning and managing translation memory data. The desktop-style flow uses a **Flask** backend and a **Next.js** UI shipped under `dist/New_UI`.
 
 ## Quick Start (Windows)
 
-- Double-click `start_tmxmatic.bat` in the project root.
-- This script will:
-  - Check for Python 3; if missing, attempt to install it silently via `winget`.
-  - Create and activate a virtual environment at `.venv`.
-  - Upgrade `pip` and install dependencies from `other/requirements.txt`; ensure `Flask-CORS` is installed.
-  - Launch the app via `launcher.py`, which will:
-    - Start the Flask backend at `http://localhost:5000`.
-    - Check for Node.js/npm; if missing, download and install Node.js.
-    - If the frontend is present at `dist/New_UI`, install Node dependencies, build the UI, and start the dev server (typically on `http://localhost:3000`). Your default browser will open to the running UI.
-- Logs are written to a file named like `tmxmatic_YYYYMMDD_HHMMSS.log` in the application directory.
+1. Install **[Node.js LTS](https://nodejs.org/)** (includes `npm`) and ensure `node` and `npm` are on your `PATH`.
+2. Double-click **`start_tmxmatic.bat`** in the project root.
 
-## Getting Started
+The batch script will, in order:
 
-### Prerequisites
-- Python 3.8 or higher
-- Node.js 16 or higher (for UI development)
-- pip (Python package manager)
+- Resolve **Python 3** (`py -3` or `python`); if missing, it may attempt a silent install via **winget** (when available).
+- Run **`dependency_manager.py`**, which installs all UI packages declared in **`dist/New_UI/package.json`** (uses **`npm ci`** when `package-lock.json` is present, otherwise **`npm install`**). This step **requires** `npm` on `PATH`; the script stops with an error if the install fails.
+- Create and activate a virtual environment at **`.venv`**, upgrade **pip**, and install Python packages from **`other/requirements.txt`**, then ensure **Flask-CORS** is available.
+- Start **`launcher.py`**, which:
+  - Starts the Flask backend at **`http://127.0.0.1:5000`** (and related API routes).
+  - If **`dist/New_UI`** exists, ensures Node dependencies again, **builds** the Next.js app, then starts the **dev** server (typically **`http://localhost:3000`**). Your browser may open to the running UI.
+  - May still attempt to resolve or configure **Node/npm** from the launcher when the Next.js thread starts (see logs if the UI does not come up).
 
-### Installation
+Session logs are written next to the app, named like **`tmxmatic_YYYYMMDD_HHMMSS.log`**.
 
-1. Clone the repository:
-bash
-git clone [repository-url]
-cd tmx-processing-tool
+### UI notes
 
-2. Install Python dependencies:
-bash
-pip install -r requirements.txt
+- **Settings** (gear in the workbench) includes integration options and **Appearance**: **Light**, **Dark**, or **System** theme (persisted via the UI theme provider).
 
-3. Run the Flask development server:
-bash
-python app.py
+## Prerequisites
 
-The application will be available at `http://localhost:5000`
+- **Python** 3.10 or newer (3.8+ may work; the Windows batch script targets current Python via winget when needed).
+- **Node.js** 18+ recommended (**20 LTS** matches typical Next.js 15 / React 19 setups); **`npm`** must be on `PATH` for the batch file’s UI install step.
+- **pip** (comes with Python).
 
-## Features
+## Manual installation (any OS)
 
-### TMX Processing Operations
+1. Clone the repository and enter the project directory.
 
-#### Duplicate Management
-The tool offers two distinct approaches to handling duplicates:
+   ```bash
+   git clone <repository-url>
+   cd TMXmatic
+   ```
 
-1. **True Duplicates** (`find_true_duplicates`)
-   - Identifies entries with identical source AND target text
-   - Keeps the most recent version based on changedate/creationdate
-   - Moves older duplicates to a separate file
-   - Use this when you want to remove exact duplicates while keeping the latest version
+2. Create a virtual environment (recommended) and install Python dependencies:
 
-2. **Non-True Duplicates** (`extract_non_true_duplicates`)
-   - Identifies entries with the same source but different target text
-   - Moves all variations to a separate file for review
-   - Use this to find potentially inconsistent translations
-   - Helps maintain translation consistency
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate   # Windows: .venv\Scripts\activate
+   python -m pip install --upgrade pip
+   python -m pip install -r other/requirements.txt
+   python -m pip install flask-cors
+   ```
 
-#### XLIFF Operations
+3. Install the Next.js UI dependencies (single source of truth: `package.json`):
 
-1. **TMX Leverage** (`xliff_tmx_leverage`)
-   - Applies translations from a TMX file to an XLIFF file
-   - Only fills empty target segments
-   - Provides statistics on:
-     - Number of translations found
-     - Updates made
-     - Remaining empty segments
+   ```bash
+   cd dist/New_UI
+   npm ci
+   # or: npm install --legacy-peer-deps
+   ```
 
-2. **XLIFF Status Check** (`xliff_check`)
-   - Analyzes XLIFF files for completion
-   - Reports:
-     - Total segments
-     - Empty segments
-     - Completion rate
+4. Run the backend:
 
-### Other Operations
+   ```bash
+   cd ../..   # back to repo root
+   python app.py
+   ```
 
-#### TMX File Operations
-- **Split TMX by language**
-  - `split_by_language(file_path)`: Creates separate TMX files for each target language
-  - `split_by_size(file_path, max_tus)`: Splits TMX into smaller files with specified maximum TUs
+   The API and server-rendered routes are served from the Flask app (default **`http://127.0.0.1:5000`**). For the full workbench UI in development, run the Next app in another terminal (see below).
 
-#### Data Cleaning Operations
-- **Remove empty targets**
-  - `empty_targets(file_path)`: Removes translation units with empty target segments
-  - Creates separate files for valid and empty segments
+## Features (overview)
 
-- **Remove duplicates**
-  - `find_true_duplicates(file_path)`: Identifies and separates exact duplicate translations
-  - `extract_non_true_duplicates(file_path)`: Identifies similar but non-identical translations
-  - `find_sentence_level_segments(file_path)`: Separates complete sentence segments
+### TMX processing
 
-- **Clean for MT**
-  - `clean_tmx_for_mt(file_path)`: Prepares TMX for machine translation training
-  - Removes tags, placeholders, and problematic segments
-  - Normalizes content for better training results
+- **Duplicate management**: true duplicates vs non-true (same source, different targets), with helpers for sentence-level segments and cleanup.
+- **Data cleaning**: empty targets, MT-oriented cleaning, context props, date-based workflows.
+- **Analysis**: creation/last-change dates, exports, batch pipelines (`batch_process_1_5`, `batch_process_1_5_9`, etc.).
+- **Merge / split / conversions**: merge TMX, split by language or size, VATV / TermWeb style conversions where implemented.
 
-#### Analysis Tools
-- **Date Analysis**
-  - `count_creation_dates(file_path)`: Analyzes TU creation date distribution
-  - `count_last_usage_dates(file_path)`: Tracks when translations were last modified
-  - `find_date_duplicates(file_path, date)`: Finds duplicates around a specific date
+### XLIFF
 
-- **Content Analysis**
-  - `extract_translations(file_path)`: Exports all translations to CSV format
-  - Includes metadata like creation dates and change dates
-
-#### Batch Processing
-- **Automated Workflows**
-  - `batch_process_1_5(file_path)`: Runs steps 1-5 in sequence:
-    1. Remove empty targets
-    2. Remove true duplicates
-    3. Extract non-true duplicates
-    4. Remove sentence-level segments
-    5. Clean output
-  - `batch_process_1_5_9(file_path, cutoff_date)`: Adds date filtering to the workflow
-
-#### File Conversion
-- **Format Conversion**
-  - `convert_vatv_to_tmx(file_path)`: Converts VATV CSV files to TMX format
-  - `convert_termweb_to_tmx(file_path)`: Converts TermWeb Excel files to TMX format
-
-#### File Management
-- **Merge Operations**
-  - `merge_tmx_files(file_paths)`: Combines multiple TMX files
-  - Removes duplicates and keeps most recent versions
-  - Maintains consistent source language
-
-#### XLIFF Support
-- **XLIFF Operations**
-  - `leverage_tmx_into_xliff(tmx_file, xliff_file)`: Applies TMX translations to XLIFF
-  - `check_empty_targets(xliff_file)`: Analyzes XLIFF completion status
+- Leverage TMX into XLIFF and check completion / empty targets (see `scripts/` and API operation names in `app.py`).
 
 ## Development
 
-### Project Structure
-```
-tmx-processing-tool/
-├── app.py              # Flask application
-├── config.py           # Configuration settings
-├── requirements.txt    # Python dependencies
-├── scripts/           # Processing scripts
-│   ├── __init__.py
-│   ├── remove_duplicates.py
-│   ├── extract_ntds.py
-│   └── xliff_operations.py
-└── New_UI/           # React frontend
-    └── components/   # UI components
+### Project structure (simplified)
+
+```text
+TMXmatic/
+├── app.py                 # Flask application (API + processing)
+├── launcher.py            # Windows-oriented startup: Flask + Next build/dev
+├── dependency_manager.py # Node install from dist/New_UI/package.json (also run by the .bat)
+├── start_tmxmatic.bat     # Recommended Windows entry point
+├── config.py
+├── other/
+│   └── requirements.txt   # Python dependencies for local / venv install
+├── dist/
+│   └── New_UI/            # Next.js app (package.json, components, app/)
+├── scripts/               # TMX/XLIFF/TBX processing modules
+└── app.spec               # PyInstaller spec (if you build an executable)
 ```
 
-### Running in Development Mode
+### Backend only
 
-1. Start the Flask backend:
 ```bash
 python app.py
 ```
 
-2. Start the UI development server (in a separate terminal):
+### UI (Next.js) in dev
+
+From the repo root:
+
 ```bash
-cd New_UI
-npm install
+cd dist/New_UI
+npm install   # or npm ci
 npm run dev
 ```
 
-### Building for Distribution
+Open the URL shown in the terminal (usually **`http://localhost:3000`**). The UI expects the Flask API at **`http://127.0.0.1:5000`** unless you configure otherwise.
 
-1. Build the UI:
+### Building the UI for production
+
 ```bash
-cd New_UI
+cd dist/New_UI
 npm run build
 ```
 
-2. Build the executable:
+### Building a Windows executable
+
 ```bash
 pyinstaller app.spec
 ```
 
-The executable will be created in the `dist` directory.
+Output appears under the **`dist/`** directory (PyInstaller output; not the same folder as **`dist/New_UI`**).
+
+## Node dependency management (`dependency_manager.py`)
+
+- **`DependencyManager.ensure_node_dependencies()`** compares **`dist/New_UI/package.json`** (`dependencies` + `devDependencies`) to top-level folders under **`dist/New_UI/node_modules`**. If anything is missing, it runs one full **`npm ci`** (or **`npm install`** if there is no lockfile, or after a failed `npm ci`).
+- You can run the same step manually from the repo root:
+
+  ```bash
+  python dependency_manager.py
+  ```
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+1. Fork the repository  
+2. Create a feature branch  
+3. Commit your changes  
+4. Push to the branch  
+5. Open a Pull Request  
 
 ## License
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
+Licensed under the Apache License, Version 2.0 (the "License");  
+you may not use this file except in compliance with the License.  
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+https://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
+Unless required by applicable law or agreed to in writing, software  
+distributed under the License is distributed on an "AS IS" BASIS,  
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  
+See the License for the specific language governing permissions and  
 limitations under the License.
 
 ## Support
 
 For support, please open an issue in the GitHub repository.
-

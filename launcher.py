@@ -12,7 +12,7 @@ from datetime import datetime
 import importlib.util
 import signal
 import atexit
-from dependency_manager import DependencyManager, DependencyCategories
+from dependency_manager import DependencyManager
 
 def setup_dynamic_dependencies():
     """Set up dynamic dependency installation"""
@@ -20,55 +20,20 @@ def setup_dynamic_dependencies():
     
     app_path = get_application_path()
     dep_manager = DependencyManager(app_path)
-    
-    # Check if we have a minimal package.json
-    #if not os.path.exists(dep_manager.package_json_path):
-    #    logging.info("Creating minimal package.json...")
-    #    create_minimal_package_json(dep_manager)
-    
-    # Install core runtime dependencies
-    logging.info("Installing core runtime dependencies...")
-    install_core_dependencies(dep_manager)
-    
-    # Ensure build tools are present; install any missing now
-    logging.info("Ensuring build tools are installed...")
-    missing_build_tools = []
-    for package in DependencyCategories.BUILD_TOOLS:
-        if not dep_manager.is_package_installed(package):
-            missing_build_tools.append(package)
-    
-    if missing_build_tools:
-        logging.info(f"Installing {len(missing_build_tools)} build tools: {', '.join(missing_build_tools)}")
-        for package in missing_build_tools:
-            if not dep_manager.install_package(package, is_dev=True):
-                logging.error(f"Failed to install build tool: {package}")
-                # Don't abort entire startup; continue to allow later retries
-    else:
-        logging.info("All build tools already installed")
-    
+
+    if not os.path.exists(dep_manager.package_json_path):
+        logging.error("Next.js UI package.json not found: %s", dep_manager.package_json_path)
+        return False
+
+    if not dep_manager.ensure_node_dependencies():
+        logging.error("Failed to install Node.js dependencies for the UI")
+        return False
+
     # Additionally, if any tool still missing, prepare installer script as fallback
     if needs_build_tools():
         logging.info("Build tools still not fully detected, preparing installer script for first build fallback...")
         setup_build_tools_installation(dep_manager)
     
-    return True
-
-def install_core_dependencies(dep_manager: DependencyManager):
-    """Install only core runtime dependencies"""
-    missing_core = []
-    
-    for package in DependencyCategories.CORE_RUNTIME:
-        if not dep_manager.is_package_installed(package):
-            missing_core.append(package)
-    
-    if missing_core:
-        logging.info(f"Installing {len(missing_core)} core dependencies...")
-        for package in missing_core:
-            if not dep_manager.install_package(package):
-                logging.error(f"Failed to install core dependency: {package}")
-                return False
-    
-    logging.info("Core dependencies installed successfully")
     return True
 
 def setup_build_tools_installation(dep_manager: DependencyManager):
@@ -657,36 +622,15 @@ def run_nextjs():
             return
         logging.info(f"Using npm from: {npm_path}")
         
-        # Use DependencyManager to ensure all dependencies are installed
+        # Use DependencyManager to ensure all dependencies are installed (from package.json)
         dep_manager = DependencyManager(application_path)
-        
-        # Install core runtime dependencies first
-        logging.info("Ensuring core runtime dependencies are installed...")
-        missing_core = []
-        for package in DependencyCategories.CORE_RUNTIME:
-            if not dep_manager.is_package_installed(package):
-                missing_core.append(package)
-        
-        if missing_core:
-            logging.info(f"Installing {len(missing_core)} missing core dependencies...")
-            for package in missing_core:
-                if not dep_manager.install_package(package):
-                    logging.error(f"Failed to install core dependency: {package}")
-                    return
-        
-        # Install build tools if needed
-        logging.info("Ensuring build tools are installed...")
-        missing_build_tools = []
-        for package in DependencyCategories.BUILD_TOOLS:
-            if not dep_manager.is_package_installed(package):
-                missing_build_tools.append(package)
-        
-        if missing_build_tools:
-            logging.info(f"Installing {len(missing_build_tools)} missing build tools...")
-            for package in missing_build_tools:
-                if not dep_manager.install_package(package, is_dev=True):
-                    logging.error(f"Failed to install build tool: {package}")
-                    return
+        if not os.path.exists(dep_manager.package_json_path):
+            logging.error("package.json not found: %s", dep_manager.package_json_path)
+            return
+        logging.info("Ensuring Node.js dependencies from package.json are installed...")
+        if not dep_manager.ensure_node_dependencies():
+            logging.error("Failed to install Node dependencies before Next.js build")
+            return
 
         # Build the Next.js application
         logging.info("Building Next.js application...")
@@ -985,9 +929,12 @@ def main():
         
         # Set up dynamic dependency management (Node/Next deps)
         try:
-            setup_dynamic_dependencies()
+            if not setup_dynamic_dependencies():
+                logging.error("Node UI dependency setup failed. Exiting.")
+                sys.exit(1)
         except Exception as e:
-            logging.warning(f"Dynamic dependency setup had issues: {e}")
+            logging.error("Dynamic dependency setup failed: %s", e)
+            sys.exit(1)
 
         # Summary of all checks
         logging.info("=" * 60)

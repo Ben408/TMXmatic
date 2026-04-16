@@ -7,6 +7,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Loader2, CheckCircle2, XCircle, Wifi, X } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { useTheme } from "next-themes"
 import {
   Dialog,
@@ -29,7 +36,7 @@ interface ConnectionTestResult {
 }
 
 export function SettingsPage({ onBack }: SettingsPageProps) {
-  const { resolvedTheme, setTheme } = useTheme()
+  const { theme, resolvedTheme, setTheme } = useTheme()
   const [isMounted, setIsMounted] = useState(false)
   const [okapiEnabled, setOkapiEnabled] = useState(false)
   
@@ -213,20 +220,34 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
         {/* Appearance */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Appearance</CardTitle>
-                <CardDescription>
-                  Choose between light and dark mode
-                </CardDescription>
-              </div>
-              <Switch
-                checked={isMounted ? resolvedTheme === "dark" : false}
-                onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
-                aria-label="Toggle dark mode"
-              />
-            </div>
+            <CardTitle>Appearance</CardTitle>
+            <CardDescription>
+              Light, dark, or match your system setting
+            </CardDescription>
           </CardHeader>
+          <CardContent className="space-y-2">
+            <Label htmlFor="theme-select">Theme</Label>
+            <Select
+              value={isMounted ? (theme ?? "system") : "system"}
+              onValueChange={(value) => setTheme(value)}
+              disabled={!isMounted}
+            >
+              <SelectTrigger id="theme-select" className="max-w-xs">
+                <SelectValue placeholder="Theme" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="light">Light</SelectItem>
+                <SelectItem value="dark">Dark</SelectItem>
+                <SelectItem value="system">System</SelectItem>
+              </SelectContent>
+            </Select>
+            {isMounted && theme === "system" && resolvedTheme && (
+              <p className="text-sm text-muted-foreground">
+                Using {resolvedTheme === "dark" ? "dark" : "light"} from your
+                system
+              </p>
+            )}
+          </CardContent>
         </Card>
 
         {/* Okapi Integration */}
