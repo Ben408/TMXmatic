@@ -1,6 +1,9 @@
-# TMXmatic — TMX processing tool
+# Language Data Workbench (TMXmatic) - processing tool for TMX, TBX, XLIFF and Excel files.
 
-Web-based tooling for processing **TMX** (Translation Memory eXchange), **XLIFF**, and related files, with a focus on cleaning and managing translation memory data. The desktop-style flow uses a **Flask** backend and a **Next.js** UI shipped under `dist/New_UI`.
+Web-based tooling for processing **TMX** (Translation Memory eXchange), **XLIFF**, and related files, with a focus on cleaning and managing translation memory and language data. The desktop-style flow uses a **Flask** backend and a **Next.js** UI shipped under `dist/New_UI`.
+
+<img width="1244" height="1080" alt="image" src="https://github.com/user-attachments/assets/4f638ba2-20d0-4c4a-ad77-462af9bdc415" />
+
 
 ## Quick Start (Windows)
 
@@ -16,6 +19,12 @@ The batch script will, in order:
   - Starts the Flask backend at **`http://127.0.0.1:5000`** (and related API routes).
   - If **`dist/New_UI`** exists, ensures Node dependencies again, **builds** the Next.js app, then starts the **dev** server (typically **`http://localhost:3000`**). Your browser may open to the running UI.
   - May still attempt to resolve or configure **Node/npm** from the launcher when the Next.js thread starts (see logs if the UI does not come up).
+
+- A command window will appear, when the Next.js server is up a web-browser tab will open with the UI.
+
+- Drag in assets to provess or use the file picker.
+
+- Select operations to run individually or select multiple operations to run as a batch.
 
 Session logs are written next to the app, named like **`tmxmatic_YYYYMMDD_HHMMSS.log`**.
 
@@ -164,3 +173,6 @@ limitations under the License.
 ## Support
 
 For support, please open an issue in the GitHub repository.
+
+## Contact
+email: ben@bencornelius.com
