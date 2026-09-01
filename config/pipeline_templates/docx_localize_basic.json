@@ -1,23 +1,29 @@
 {
   "id": "docx_localize_basic",
-  "name": "Document localize (basic)",
-  "description": "Okapi DOCX round-trip for Hermes localize-document-basic (TM/MT steps added incrementally).",
+  "name": "Document translate (Slack / gemma)",
+  "description": "Okapi extract → translategemma per XLIFF segment → Okapi merge. No TM or cloud glossary.",
   "category": "localization",
   "steps": [
     {
       "id": "okapi-extract",
       "type": "okapi",
       "operation": "convert",
-      "description": "Extract to XLIFF"
+      "description": "Extract to XLIFF (Okapi filter)"
+    },
+    {
+      "id": "gemma-mt",
+      "type": "python",
+      "operation": "xliff_gemma_mt",
+      "description": "Fill empty targets with Ollama translategemma"
     },
     {
       "id": "okapi-merge",
       "type": "okapi",
       "operation": "merge",
-      "description": "Merge translated XLIFF back to DOCX"
+      "description": "Merge translated XLIFF back to source package"
     }
   ],
   "input_requirements": {
-    "formats": ["docx", "doc"]
+    "formats": ["docx", "doc", "xlsx", "pptx", "html", "idml"]
   }
 }

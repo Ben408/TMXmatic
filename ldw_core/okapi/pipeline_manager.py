@@ -97,7 +97,7 @@ class HybridPipelineManager:
                     current_files[0],
                     step_work,
                     self._app_path,
-                    options=step.get("options") or {},
+                    options={**shared_options, **(step.get("options") or {})},
                 )
                 step_results.append(
                     {

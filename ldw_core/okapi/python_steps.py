@@ -29,6 +29,7 @@ PIPELINE_PYTHON_OPERATIONS: frozenset[str] = frozenset(
         "find_date_duplicates",
         "remove_context_props",
         "retag_tmx",
+        "xliff_gemma_mt",
     }
 )
 
@@ -42,6 +43,27 @@ def run_python_operation(
 ) -> OkapiRunResult:
     """Run one LDW script operation and stage outputs under ``work_dir``."""
     opts = options or {}
+    if operation_id == "xliff_gemma_mt":
+        if app_path not in sys.path:
+            sys.path.insert(0, app_path)
+        try:
+            from scripts.xliff_gemma_mt import translate_xliff_with_gemma
+        except ImportError as exc:
+            return OkapiRunResult(False, [], "", f"cannot import xliff_gemma_mt: {exc}")
+        dest = os.path.join(work_dir, os.path.basename(input_path))
+        try:
+            out_path, stats = translate_xliff_with_gemma(
+                input_path,
+                target_lang=opts.get("target_lang"),
+                source_lang=opts.get("source_lang"),
+                max_segments=opts.get("max_segments"),
+                model=opts.get("model"),
+                output_path=dest,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return OkapiRunResult(False, [], "", str(exc))
+        return OkapiRunResult(True, [out_path], json.dumps(stats))
+
     if operation_id not in PIPELINE_PYTHON_OPERATIONS:
         return OkapiRunResult(
             False,
