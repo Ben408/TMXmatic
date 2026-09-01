@@ -79,7 +79,7 @@ def smoke_docker(app_path: str, image: str | None) -> int:
     return 0
 
 
-def smoke_github(app_path: str) -> int:
+def smoke_github(app_path: str, *, full: bool = False) -> int:
     cfg = load_okapi_config(app_path)
     token = (cfg.get("github_token") or os.environ.get("OKAPI_GITHUB_TOKEN") or "").strip()
     repo = (cfg.get("github_repo") or os.environ.get("OKAPI_GITHUB_REPO") or "").strip()
@@ -101,9 +101,40 @@ def smoke_github(app_path: str) -> int:
     if not health.available:
         return 1
 
-    # Full workflow dispatch is slow and needs inbox upload; health + config is pilot smoke.
-    build_runner("github", app_path, {**cfg, "github_token": token, "github_repo": repo})
-    print("github: repo reachable — run a convert job from LDW UI to complete end-to-end test")
+    if not full:
+        print("github: repo reachable — pass --full to run convert E2E via workflow dispatch")
+        return 0
+
+    fixture_dir = Path(app_path) / "data" / "okapi_smoke"
+    fixture_dir.mkdir(parents=True, exist_ok=True)
+    docx = fixture_dir / "smoke.docx"
+    docx.write_bytes(minimal_docx_bytes())
+    work_dir = fixture_dir / "github_work"
+    work_dir.mkdir(exist_ok=True)
+
+    from ldw_core.okapi.operation_registry import OkapiOperationRegistry
+
+    convert_op = OkapiOperationRegistry(app_path).get("convert")
+    if not convert_op:
+        print("github: convert operation missing from registry", file=sys.stderr)
+        return 1
+
+    print("github: dispatching convert workflow (may take several minutes)...")
+    result = runner.run_operation(convert_op, str(docx), str(work_dir))
+    print(
+        "convert:",
+        json.dumps(
+            {
+                "success": result.success,
+                "outputs": [os.path.basename(p) for p in result.output_files],
+                "error": result.error,
+            }
+        ),
+    )
+    if not result.success:
+        if result.log:
+            print(result.log[:3000], file=sys.stderr)
+        return 1
     return 0
 
 
@@ -116,6 +147,11 @@ def main() -> int:
         default="all",
     )
     parser.add_argument("--image", help="Docker image tag (default from settings)")
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="GitHub: run full convert workflow dispatch (slow)",
+    )
     parser.add_argument("--app-path", default=str(ROOT))
     args = parser.parse_args()
 
@@ -123,7 +159,7 @@ def main() -> int:
     if args.target in ("docker", "all"):
         code = smoke_docker(args.app_path, args.image) or code
     if args.target in ("github", "all"):
-        code = smoke_github(args.app_path) or code
+        code = smoke_github(args.app_path, full=args.full) or code
     return code
 
 

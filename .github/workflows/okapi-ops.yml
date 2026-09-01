@@ -1,4 +1,4 @@
-# Reference copy only — LDW must NOT dispatch Okapi jobs to Ben408/TMXmatic.
+# Reference copy only - LDW must NOT dispatch Okapi jobs to Ben408/TMXmatic.
 # Users fork ldw-okapi-workflows and configure their fork in LDW Settings.
 name: okapi-ops
 
@@ -49,7 +49,28 @@ jobs:
           chmod +x "$HOME/okapi/tikal" "$HOME/okapi/tikal.sh"
 
       - name: Download input
-        run: curl -L "${{ github.event.inputs.input_url }}" -o input.bin
+        env:
+          INPUT_URL: ${{ github.event.inputs.input_url }}
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$INPUT_URL" =~ raw\.githubusercontent\.com/([^/]+)/([^/]+)/([^/]+)/(.+) ]]; then
+            owner="${BASH_REMATCH[1]}"
+            repo="${BASH_REMATCH[2]}"
+            ref="${BASH_REMATCH[3]}"
+            path="${BASH_REMATCH[4]}"
+            input_file=$(basename "$path")
+            curl -fsSL \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github.raw" \
+              "https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${ref}" \
+              -o "$input_file"
+          else
+            input_file="input.bin"
+            curl -fsSL "$INPUT_URL" -o "$input_file"
+          fi
+          echo "input_file=$input_file" >> "$GITHUB_ENV"
 
       - name: Run operation
         shell: bash
@@ -57,10 +78,10 @@ jobs:
           set -euo pipefail
           OP="${{ github.event.inputs.operation }}"
           case "$OP" in
-            convert) tikal -x input.bin -od . -nocopy -sl en-us -tl fr-fr && mv input.bin.xlf converted.xlf ;;
-            merge) tikal -m input.bin -od . && test -e merged-output || cp -a . merged-output ;;
-            qa) tikal -x input.bin -od . -seg -nocopy ;;
-            terms) tikal -x input.bin -od . -tt -nocopy ;;
+            convert) tikal -x "$input_file" -od . -nocopy -sl en-us -tl fr-fr && mv "${input_file}.xlf" converted.xlf ;;
+            merge) tikal -m "$input_file" -od . && test -e merged-output || cp -a . merged-output ;;
+            qa) tikal -x "$input_file" -od . -seg -nocopy ;;
+            terms) tikal -x "$input_file" -od . -tt -nocopy ;;
             *) echo "Unknown operation: $OP"; exit 2 ;;
           esac
 

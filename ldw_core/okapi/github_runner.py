@@ -114,7 +114,7 @@ class GitHubActionsRunner(OkapiRunner):
             return OkapiRunResult(False, [], log, "workflow dispatch failed")
         run_id = self._wait_for_run(dispatch_time)
         if not run_id:
-            return OkapiRunResult(False, [], log, "timed out waiting for workflow run")
+            return OkapiRunResult(False, [], log, "workflow run failed or timed out")
         outputs = self._download_artifacts(run_id, work_dir, operation)
         if not outputs:
             return OkapiRunResult(False, [], log, "no artifacts from workflow run")
@@ -152,27 +152,37 @@ class GitHubActionsRunner(OkapiRunner):
 
     def _wait_for_run(self, after_epoch: float, timeout_s: int = 900) -> int | None:
         """Poll workflow runs created after dispatch."""
+        from datetime import datetime
+
         deadline = time.time() + timeout_s
+        tracked_run_id: int | None = None
         while time.time() < deadline:
             response = self._session.get(
                 f"https://api.github.com/repos/{self._repo}/actions/runs",
-                params={"event": "workflow_dispatch", "per_page": 5},
+                params={"event": "workflow_dispatch", "per_page": 10},
                 timeout=30,
             )
             if response.status_code == 200:
                 for run in response.json().get("workflow_runs", []):
-                    created = run.get("created_at", "")
-                    # GitHub ISO timestamps sort lexicographically; also check status.
-                    if run.get("status") == "completed" and run.get("id"):
+                    created_at = run.get("created_at", "")
+                    try:
+                        created_ts = datetime.fromisoformat(created_at.replace("Z", "+00:00")).timestamp()
+                    except ValueError:
+                        continue
+                    if created_ts < after_epoch - 10:
+                        continue
+                    run_id = int(run["id"])
+                    status = run.get("status")
+                    if status == "completed":
                         if run.get("conclusion") == "success":
-                            return int(run["id"])
+                            return run_id
                         if run.get("conclusion") == "failure":
                             return None
-                    if run.get("status") in ("in_progress", "queued", "pending"):
-                        run_id = int(run["id"])
-                        # Wait for this run to finish.
-                        if self._poll_run_until_done(run_id):
-                            return run_id if self._run_succeeded(run_id) else None
+                        continue
+                    if status in ("in_progress", "queued", "pending", "waiting"):
+                        tracked_run_id = run_id
+                if tracked_run_id and self._poll_run_until_done(tracked_run_id):
+                    return tracked_run_id if self._run_succeeded(tracked_run_id) else None
             time.sleep(8)
         return None
 
