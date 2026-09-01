@@ -1,0 +1,24 @@
+---
+description: Private LDW planning — modules, Okapi, backlog (not in public GitHub)
+alwaysApply: true
+---
+
+# LDW-Planning continuity
+
+This workspace is the public OSS core ([Ben408/TMXmatic](https://github.com/Ben408/TMXmatic)).
+
+Private planning, backlog, and module specs:
+
+**`F:/LDW-Planning`** — [Ben408/LDW-Planning](https://github.com/Ben408/LDW-Planning) (private)
+
+Before changing **Okapi integration**, **module registry**, **job API**, or **install.bat** contract, read:
+
+- [architecture/module-system.md](F:/LDW-Planning/architecture/module-system.md)
+- [architecture/ldw-core-prerequisites.md](F:/LDW-Planning/architecture/ldw-core-prerequisites.md)
+- [backlog/OKAPI_INTEGRATION_PLAN_rev.md](F:/LDW-Planning/backlog/OKAPI_INTEGRATION_PLAN_rev.md)
+
+**Never commit** `F:/LDW-Planning/backlog` contents into this public repo.
+
+Installable modules (separate private repos): `ldw-llm-quality`, `ldw-multi-agent` — see [architecture/repo-map.md](F:/LDW-Planning/architecture/repo-map.md).
+
+Flask API default: **`http://127.0.0.1:5000`** (see README).
