@@ -1,6 +1,8 @@
 {
   "okapi": {
     "enabled": true,
+    "backend": "docker",
+    "docker_image": "ldw-okapi-tikal:1.48",
     "api_key": "",
     "api_url": "",
     "workspace_id": ""

@@ -23,6 +23,10 @@ ALL_BACKENDS = (
     BACKEND_HOSTED,
 )
 
+# Built from docker/okapi-tikal/Dockerfile — not a Docker Hub image.
+DEFAULT_OKAPI_DOCKER_IMAGE = "ldw-okapi-tikal:1.48"
+DEFAULT_OKAPI_VERSION = "1.48.0"
+
 
 def _settings_paths(app_path: str) -> tuple[str, str]:
     return (
@@ -38,7 +42,7 @@ def load_okapi_config(app_path: str | None = None) -> dict[str, Any]:
     config: dict[str, Any] = {
         "enabled": False,
         "backend": BACKEND_DOCKER,
-        "docker_image": "okapiframework/okapi:latest",
+        "docker_image": DEFAULT_OKAPI_DOCKER_IMAGE,
         "tikal_path": "",
         "github_repo": "",
         "github_workflow": "okapi-ops.yml",
@@ -51,11 +55,11 @@ def load_okapi_config(app_path: str | None = None) -> dict[str, Any]:
         "workspace_id": "",
     }
     if os.path.isfile(public_path):
-        with open(public_path, encoding="utf-8") as handle:
+        with open(public_path, encoding="utf-8-sig") as handle:
             public = json.load(handle)
         config.update(public.get("okapi", {}))
     if os.path.isfile(secrets_path):
-        with open(secrets_path, encoding="utf-8") as handle:
-            secrets = json.load(f)
+        with open(secrets_path, encoding="utf-8-sig") as handle:
+            secrets = json.load(handle)
         config.update(secrets.get("okapi", {}))
     return config

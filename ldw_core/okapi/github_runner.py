@@ -12,6 +12,7 @@ from typing import Any
 
 import requests
 
+from ldw_core.okapi.github_policy import validate_github_repo
 from ldw_core.okapi.operation_registry import OkapiOperation
 from ldw_core.okapi.runners import OkapiRunResult, OkapiRunner, RunnerHealth
 
@@ -42,20 +43,52 @@ class GitHubActionsRunner(OkapiRunner):
         )
 
     def health_check(self) -> RunnerHealth:
-        if not self._token or not self._repo:
+        if not self._token:
             return RunnerHealth(
                 self.backend_id,
                 False,
-                "Set github_token (secrets) and github_repo (e.g. user/ldw-okapi-workflows)",
+                "Add a GitHub personal access token with repo and workflow permissions.",
             )
+        ok, message = validate_github_repo(self._repo)
+        if not ok:
+            return RunnerHealth(self.backend_id, False, message)
         try:
             response = self._session.get(
                 f"https://api.github.com/repos/{self._repo}",
                 timeout=20,
             )
-            if response.status_code == 200:
-                return RunnerHealth(self.backend_id, True, f"github repo {self._repo} reachable")
-            return RunnerHealth(self.backend_id, False, f"github API {response.status_code}")
+            if response.status_code == 401:
+                return RunnerHealth(self.backend_id, False, "GitHub token was rejected. Check the PAT and its scopes.")
+            if response.status_code == 404:
+                return RunnerHealth(
+                    self.backend_id,
+                    False,
+                    f"Repository {self._repo} was not found or your token cannot access it.",
+                )
+            if response.status_code != 200:
+                return RunnerHealth(self.backend_id, False, f"GitHub API returned {response.status_code}")
+            workflow_resp = self._session.get(
+                f"https://api.github.com/repos/{self._repo}/actions/workflows/{self._workflow}",
+                timeout=20,
+            )
+            if workflow_resp.status_code == 404:
+                return RunnerHealth(
+                    self.backend_id,
+                    False,
+                    f"Workflow {self._workflow} was not found in {self._repo}. "
+                    "Fork the ldw-okapi-workflows template and use the default workflow file.",
+                )
+            if workflow_resp.status_code != 200:
+                return RunnerHealth(
+                    self.backend_id,
+                    False,
+                    f"Could not verify workflow ({workflow_resp.status_code}).",
+                )
+            return RunnerHealth(
+                self.backend_id,
+                True,
+                f"GitHub ready — {self._repo} ({self._workflow} on {self._branch})",
+            )
         except requests.RequestException as exc:
             return RunnerHealth(self.backend_id, False, str(exc))
 
@@ -66,6 +99,11 @@ class GitHubActionsRunner(OkapiRunner):
         work_dir: str,
         options: dict[str, Any] | None = None,
     ) -> OkapiRunResult:
+        ok, message = validate_github_repo(self._repo)
+        if not ok:
+            return OkapiRunResult(False, [], "", message)
+        if not self._token:
+            return OkapiRunResult(False, [], "", "GitHub token is not configured.")
         opts = options or {}
         input_url = opts.get("input_url")
         if not input_url:
@@ -76,7 +114,7 @@ class GitHubActionsRunner(OkapiRunner):
             return OkapiRunResult(False, [], log, "workflow dispatch failed")
         run_id = self._wait_for_run(dispatch_time)
         if not run_id:
-            return OkapiRunResult(False, [], log, "timed out waiting for workflow run")
+            return OkapiRunResult(False, [], log, "workflow run failed or timed out")
         outputs = self._download_artifacts(run_id, work_dir, operation)
         if not outputs:
             return OkapiRunResult(False, [], log, "no artifacts from workflow run")
@@ -114,27 +152,37 @@ class GitHubActionsRunner(OkapiRunner):
 
     def _wait_for_run(self, after_epoch: float, timeout_s: int = 900) -> int | None:
         """Poll workflow runs created after dispatch."""
+        from datetime import datetime
+
         deadline = time.time() + timeout_s
+        tracked_run_id: int | None = None
         while time.time() < deadline:
             response = self._session.get(
                 f"https://api.github.com/repos/{self._repo}/actions/runs",
-                params={"event": "workflow_dispatch", "per_page": 5},
+                params={"event": "workflow_dispatch", "per_page": 10},
                 timeout=30,
             )
             if response.status_code == 200:
                 for run in response.json().get("workflow_runs", []):
-                    created = run.get("created_at", "")
-                    # GitHub ISO timestamps sort lexicographically; also check status.
-                    if run.get("status") == "completed" and run.get("id"):
+                    created_at = run.get("created_at", "")
+                    try:
+                        created_ts = datetime.fromisoformat(created_at.replace("Z", "+00:00")).timestamp()
+                    except ValueError:
+                        continue
+                    if created_ts < after_epoch - 10:
+                        continue
+                    run_id = int(run["id"])
+                    status = run.get("status")
+                    if status == "completed":
                         if run.get("conclusion") == "success":
-                            return int(run["id"])
+                            return run_id
                         if run.get("conclusion") == "failure":
                             return None
-                    if run.get("status") in ("in_progress", "queued", "pending"):
-                        run_id = int(run["id"])
-                        # Wait for this run to finish.
-                        if self._poll_run_until_done(run_id):
-                            return run_id if self._run_succeeded(run_id) else None
+                        continue
+                    if status in ("in_progress", "queued", "pending", "waiting"):
+                        tracked_run_id = run_id
+                if tracked_run_id and self._poll_run_until_done(tracked_run_id):
+                    return tracked_run_id if self._run_succeeded(tracked_run_id) else None
             time.sleep(8)
         return None
 
@@ -186,6 +234,17 @@ class GitHubActionsRunner(OkapiRunner):
                 zf.extractall(work_dir)
             for root, _, files in os.walk(work_dir):
                 for name in files:
-                    if name == expected or name.endswith((".xlf", ".xliff", ".html", ".tbx")):
-                        outputs.append(os.path.join(root, name))
+                    path = os.path.join(root, name)
+                    if path in outputs:
+                        continue
+                    if name == expected:
+                        outputs.append(path)
+                    elif operation.tikal_mode == "merge" and name.endswith((".docx", ".doc", ".xlsx", ".pptx")):
+                        outputs.append(path)
+                    elif operation.tikal_mode == "extract" and (
+                        name.endswith((".xlf", ".xliff")) or name == expected
+                    ):
+                        outputs.append(path)
+                    elif name.endswith((".html", ".tbx")):
+                        outputs.append(path)
         return outputs

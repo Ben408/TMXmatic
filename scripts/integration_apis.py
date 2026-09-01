@@ -13,7 +13,7 @@ from typing import Dict, Optional, Any, Tuple
 from pathlib import Path
 from datetime import datetime
 
-logger = logging.getLogger(__name__)
+from ldw_core.okapi.github_policy import validate_github_repo
 
 # Settings file paths
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -33,7 +33,7 @@ class IntegrationSettings:
             'okapi': {
                 'enabled': False,
                 'backend': 'docker',
-                'docker_image': 'okapiframework/okapi:latest',
+                'docker_image': 'ldw-okapi-tikal:1.48',
                 'tikal_path': '',
                 'github_repo': '',
                 'github_workflow': 'okapi-ops.yml',
@@ -121,6 +121,13 @@ class IntegrationSettings:
             secret_settings = {'okapi': {}}
 
             okapi_in = settings.get('okapi', {})
+
+            github_repo = okapi_in.get('github_repo', '')
+            if github_repo:
+                ok, err = validate_github_repo(github_repo)
+                if not ok:
+                    logger.error("Rejected github_repo: %s", err)
+                    return False
 
             # Split Okapi settings
             for key, value in okapi_in.items():
@@ -496,4 +503,38 @@ def test_integration_connection(
         return False, "Okapi is not enabled or configured"
 
     return False, f"Unknown integration: {integration}"
+
+
+def test_okapi_processing_backend(
+    backend: str,
+    okapi_settings: Optional[Dict[str, Any]] = None,
+) -> Tuple[bool, str]:
+    """Test Docker tikal or GitHub Actions Okapi backend using form or saved settings."""
+    from ldw_core.okapi.config import load_okapi_config
+    from ldw_core.okapi.runners import build_runner
+
+    app_path = PROJECT_ROOT
+    saved = IntegrationSettings.load_settings().get("okapi", {})
+    cfg = {**saved, **(okapi_settings or {})}
+    backend = (backend or cfg.get("backend") or "").strip().lower()
+    if not backend:
+        return False, "Select a processing backend first."
+
+    if backend == "github":
+        repo = (cfg.get("github_repo") or "").strip()
+        ok, err = validate_github_repo(repo)
+        if not ok:
+            return False, err
+        if not (cfg.get("github_token") or "").strip():
+            return False, "Add a GitHub personal access token before testing."
+
+    try:
+        runner = build_runner(backend, app_path, cfg)
+        health = runner.health_check()
+        if health.available:
+            return True, health.message
+        return False, health.message
+    except Exception as exc:
+        logger.error("Okapi backend test failed: %s", exc)
+        return False, str(exc)
 

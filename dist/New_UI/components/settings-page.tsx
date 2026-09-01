@@ -24,6 +24,25 @@ import {
 } from "@/components/ui/dialog"
 import { toast } from "@/components/ui/use-toast"
 
+const OKAPI_WORKFLOWS_FORK_URL = "https://github.com/Ben408/ldw-okapi-workflows/fork"
+const BLOCKED_GITHUB_REPOS = new Set(["ben408/tmxmatic", "ben408/ldw-okapi-workflows"])
+
+function validateGithubRepoClient(repo: string): string | null {
+  const normalized = repo.trim()
+  if (!normalized) {
+    return "Enter your organization's fork (for example your-company/ldw-okapi-workflows)."
+  }
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(normalized)) {
+    return "Repository must look like owner/name."
+  }
+  if (BLOCKED_GITHUB_REPOS.has(normalized.toLowerCase())) {
+    return "Use your own fork of the workflow template — not the main TMXmatic app or the upstream template repo."
+  }
+  return null
+}
+
+type OkapiTestIntegration = "okapi" | "okapi_docker" | "okapi_github"
+
 interface SettingsPageProps {
   onBack: () => void
 }
@@ -42,7 +61,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
   
   // Okapi settings — backend + hosted workspace (Phase 2)
   const [okapiBackend, setOkapiBackend] = useState("docker")
-  const [okapiDockerImage, setOkapiDockerImage] = useState("okapiframework/okapi:latest")
+  const [okapiDockerImage, setOkapiDockerImage] = useState("ldw-okapi-tikal:1.48")
   const [okapiTikalPath, setOkapiTikalPath] = useState("")
   const [okapiLonghornUrl, setOkapiLonghornUrl] = useState("")
   const [okapiGithubRepo, setOkapiGithubRepo] = useState("")
@@ -57,6 +76,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [testingOkapi, setTestingOkapi] = useState(false)
+  const [showGithubAdvanced, setShowGithubAdvanced] = useState(false)
   const [connectionDialogOpen, setConnectionDialogOpen] = useState(false)
   const [connectionResult, setConnectionResult] = useState<ConnectionTestResult | null>(null)
   const [currentTestIntegration, setCurrentTestIntegration] = useState<string>("")
@@ -81,7 +101,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
         if (data.okapi) {
           setOkapiEnabled(data.okapi.enabled || false)
           setOkapiBackend(data.okapi.backend || "docker")
-          setOkapiDockerImage(data.okapi.docker_image || "okapiframework/okapi:latest")
+          setOkapiDockerImage(data.okapi.docker_image || "ldw-okapi-tikal:1.48")
           setOkapiTikalPath(data.okapi.tikal_path || "")
           setOkapiLonghornUrl(data.okapi.longhorn_url || "")
           setOkapiGithubRepo(data.okapi.github_repo || "")
@@ -105,7 +125,29 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
     }
   }
 
+  const buildOkapiPayload = () => ({
+    enabled: okapiEnabled,
+    backend: okapiBackend,
+    docker_image: okapiDockerImage,
+    tikal_path: okapiTikalPath,
+    longhorn_url: okapiLonghornUrl,
+    github_repo: okapiGithubRepo,
+    github_workflow: okapiGithubWorkflow,
+    github_branch: okapiGithubBranch,
+    github_token: okapiGithubToken,
+    api_key: okapiApiKey,
+    api_url: okapiApiUrl,
+    workspace_id: okapiWorkspaceId,
+  })
+
   const handleSave = async () => {
+    if (okapiEnabled && okapiBackend === "github" && okapiGithubRepo.trim()) {
+      const repoError = validateGithubRepoClient(okapiGithubRepo)
+      if (repoError) {
+        toast({ title: "GitHub repository not allowed", description: repoError, variant: "destructive" })
+        return
+      }
+    }
     try {
       setSaving(true)
       const response = await fetch('http://127.0.0.1:5000/api/settings', {
@@ -114,20 +156,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          okapi: {
-            enabled: okapiEnabled,
-            backend: okapiBackend,
-            docker_image: okapiDockerImage,
-            tikal_path: okapiTikalPath,
-            longhorn_url: okapiLonghornUrl,
-            github_repo: okapiGithubRepo,
-            github_workflow: okapiGithubWorkflow,
-            github_branch: okapiGithubBranch,
-            github_token: okapiGithubToken,
-            api_key: okapiApiKey,
-            api_url: okapiApiUrl,
-            workspace_id: okapiWorkspaceId,
-          },
+          okapi: buildOkapiPayload(),
         }),
       })
 
@@ -152,61 +181,41 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
     }
   }
 
-  const testConnection = async (integration: 'okapi') => {
-    // First save current settings temporarily
-    const tempSettings = {
-      okapi: {
-        enabled: integration === 'okapi' ? true : okapiEnabled,
-        api_key: okapiApiKey,
-        api_url: okapiApiUrl,
-        workspace_id: okapiWorkspaceId,
-      },
+  const runConnectionTest = async (
+    integration: OkapiTestIntegration,
+    label: string,
+    validate?: () => string | null,
+  ) => {
+    if (validate) {
+      const validationError = validate()
+      if (validationError) {
+        setConnectionResult({ success: false, message: validationError })
+        setConnectionDialogOpen(true)
+        setCurrentTestIntegration(label)
+        return
+      }
     }
 
-    // Validate required fields
-    if (!okapiApiKey || !okapiApiUrl || !okapiWorkspaceId) {
-      setConnectionResult({
-        success: false,
-        message: "Some fields are missing, please fill them in.",
-      })
-      setConnectionDialogOpen(true)
-      setCurrentTestIntegration("Okapi")
-      return
+    const okapiPayload = buildOkapiPayload()
+    if (integration === "okapi") {
+      okapiPayload.enabled = true
     }
 
     try {
       setTestingOkapi(true)
-
-      // Save settings temporarily for the test
-      await fetch('http://127.0.0.1:5000/api/settings', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(tempSettings),
-      })
-
-      // Test connection using current form values so backend doesn't rely on saved files
       const response = await fetch('http://127.0.0.1:5000/api/settings/test-connection', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          integration,
-          okapi: tempSettings.okapi,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ integration, okapi: okapiPayload }),
       })
-
       const data = await response.json()
-      
       setConnectionResult({
         success: data.success || false,
         message: data.message || (data.success ? "Connection successful" : "Connection failed"),
         statusCode: data.status_code,
         error: data.error,
       })
-      setCurrentTestIntegration("Okapi")
+      setCurrentTestIntegration(label)
       setConnectionDialogOpen(true)
     } catch (error) {
       setConnectionResult({
@@ -214,12 +223,30 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
         message: "Failed to test connection",
         error: error instanceof Error ? error.message : "Unknown error",
       })
-      setCurrentTestIntegration("Okapi")
+      setCurrentTestIntegration(label)
       setConnectionDialogOpen(true)
     } finally {
       setTestingOkapi(false)
     }
   }
+
+  const testHostedConnection = () =>
+    runConnectionTest("okapi", "Hosted Okapi workspace", () => {
+      if (!okapiApiKey || !okapiApiUrl || !okapiWorkspaceId) {
+        return "Fill in API key, API URL, and workspace ID first."
+      }
+      return null
+    })
+
+  const testDockerBackend = () => runConnectionTest("okapi_docker", "Docker tikal")
+
+  const testGithubBackend = () =>
+    runConnectionTest("okapi_github", "GitHub Actions", () => {
+      if (!okapiGithubToken.trim()) {
+        return "Add a GitHub personal access token with repo and workflow permissions."
+      }
+      return validateGithubRepoClient(okapiGithubRepo)
+    })
 
   return (
     <div className="container mx-auto py-6 px-4 md:px-6 min-h-screen">
@@ -281,7 +308,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
               <div>
                 <CardTitle>Okapi Integration</CardTitle>
                 <CardDescription>
-                  Processing backend (Docker tikal, local tikal, GHA, Longhorn) and hosted workspace API
+                  Convert and pipeline processing (Docker on this PC, or your organization&apos;s GitHub fork)
                 </CardDescription>
               </div>
               <Switch
@@ -303,134 +330,214 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
                   <SelectValue placeholder="Select backend" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="docker">Docker tikal (pilot default)</SelectItem>
-                  <SelectItem value="local_tikal">Local tikal (JRE + Okapi installed)</SelectItem>
-                  <SelectItem value="github">GitHub Actions (user fork)</SelectItem>
-                  <SelectItem value="longhorn">External Longhorn API</SelectItem>
+                  <SelectItem value="docker">Docker tikal (recommended on this PC)</SelectItem>
+                  <SelectItem value="github">GitHub Actions (your organization&apos;s fork)</SelectItem>
                   <SelectItem value="hosted">Hosted Okapi workspace</SelectItem>
+                  <SelectItem value="longhorn">External Longhorn API</SelectItem>
+                  <SelectItem value="local_tikal">Local tikal (IT only — not recommended)</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                Jobs always run in the backend you choose here. LDW never uses a shared TMXmatic GitHub Actions queue.
+              </p>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="okapi-docker-image">Docker image</Label>
-              <Input
-                id="okapi-docker-image"
-                placeholder="okapiframework/okapi:latest"
-                value={okapiDockerImage}
-                onChange={(e) => setOkapiDockerImage(e.target.value)}
-                disabled={!okapiEnabled || okapiBackend !== "docker"}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="okapi-tikal-path">Local tikal path</Label>
-              <Input
-                id="okapi-tikal-path"
-                placeholder="C:\\Okapi\\tikal.bat"
-                value={okapiTikalPath}
-                onChange={(e) => setOkapiTikalPath(e.target.value)}
-                disabled={!okapiEnabled || okapiBackend !== "local_tikal"}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="okapi-longhorn-url">Longhorn URL</Label>
-              <Input
-                id="okapi-longhorn-url"
-                type="url"
-                placeholder="https://longhorn.example.com"
-                value={okapiLonghornUrl}
-                onChange={(e) => setOkapiLonghornUrl(e.target.value)}
-                disabled={!okapiEnabled || okapiBackend !== "longhorn"}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="okapi-github-repo">GitHub repo (user fork)</Label>
-              <Input
-                id="okapi-github-repo"
-                placeholder="your-user/ldw-okapi-workflows"
-                value={okapiGithubRepo}
-                onChange={(e) => setOkapiGithubRepo(e.target.value)}
-                disabled={!okapiEnabled || okapiBackend !== "github"}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="okapi-github-token">GitHub token (PAT)</Label>
-              <Input
-                id="okapi-github-token"
-                type="password"
-                placeholder="ghp_..."
-                value={okapiGithubToken}
-                onChange={(e) => setOkapiGithubToken(e.target.value)}
-                disabled={!okapiEnabled || okapiBackend !== "github"}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="okapi-github-workflow">Workflow file</Label>
-              <Input
-                id="okapi-github-workflow"
-                value={okapiGithubWorkflow}
-                onChange={(e) => setOkapiGithubWorkflow(e.target.value)}
-                disabled={!okapiEnabled || okapiBackend !== "github"}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="okapi-github-branch">Branch</Label>
-              <Input
-                id="okapi-github-branch"
-                value={okapiGithubBranch}
-                onChange={(e) => setOkapiGithubBranch(e.target.value)}
-                disabled={!okapiEnabled || okapiBackend !== "github"}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="okapi-api-key">Hosted API Key</Label>
-              <Input
-                id="okapi-api-key"
-                type="password"
-                placeholder="Enter your Okapi API key"
-                value={okapiApiKey}
-                onChange={(e) => setOkapiApiKey(e.target.value)}
-                disabled={!okapiEnabled || okapiBackend !== "hosted"}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="okapi-api-url">Hosted API URL</Label>
-              <Input
-                id="okapi-api-url"
-                type="url"
-                placeholder="https://api.okapi.com"
-                value={okapiApiUrl}
-                onChange={(e) => setOkapiApiUrl(e.target.value)}
-                disabled={!okapiEnabled || okapiBackend !== "hosted"}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="okapi-workspace-id">Hosted Workspace ID</Label>
-              <Input
-                id="okapi-workspace-id"
-                placeholder="Enter your workspace ID"
-                value={okapiWorkspaceId}
-                onChange={(e) => setOkapiWorkspaceId(e.target.value)}
-                disabled={!okapiEnabled || okapiBackend !== "hosted"}
-              />
-            </div>
-            <Button
-              variant="outline"
-              onClick={() => testConnection('okapi')}
-              disabled={!okapiEnabled || testingOkapi}
-              className="w-full"
-            >
-              {testingOkapi ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Testing...
-                </>
-              ) : (
-                <>
-                  <Wifi className="mr-2 h-4 w-4" />
-                  Test Connection
-                </>
-              )}
-            </Button>
+
+            {okapiEnabled && okapiBackend === "docker" && (
+              <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+                <p className="text-sm font-medium">Docker tikal on this computer</p>
+                <p className="text-sm text-muted-foreground">
+                  One-time setup: install Docker Desktop, then run{" "}
+                  <code className="text-xs">scripts\build_okapi_tikal_image.ps1</code> from the LDW install folder.
+                </p>
+                <div className="space-y-2">
+                  <Label htmlFor="okapi-docker-image">Docker image name</Label>
+                  <Input
+                    id="okapi-docker-image"
+                    placeholder="ldw-okapi-tikal:1.48"
+                    value={okapiDockerImage}
+                    onChange={(e) => setOkapiDockerImage(e.target.value)}
+                  />
+                </div>
+                <Button variant="outline" onClick={testDockerBackend} disabled={testingOkapi} className="w-full">
+                  {testingOkapi ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Testing...
+                    </>
+                  ) : (
+                    <>
+                      <Wifi className="mr-2 h-4 w-4" />
+                      Test Docker tikal
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+
+            {okapiEnabled && okapiBackend === "github" && (
+              <div className="rounded-lg border bg-muted/30 p-4 space-y-4">
+                <div>
+                  <p className="text-sm font-medium">GitHub Actions in your organization</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Your IT team forks a small workflow repo once. You paste that fork here so files stay in your GitHub account.
+                  </p>
+                </div>
+                <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
+                  <li>
+                    Fork the template:{" "}
+                    <a
+                      href={OKAPI_WORKFLOWS_FORK_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary underline"
+                    >
+                      ldw-okapi-workflows
+                    </a>{" "}
+                    to your company or personal GitHub (public template; your fork can be private).
+                  </li>
+                  <li>Create a GitHub token with <strong>repo</strong> and <strong>workflow</strong> permissions.</li>
+                  <li>Enter your fork below (for example <code className="text-xs">acme-corp/ldw-okapi-workflows</code>).</li>
+                </ol>
+                <div className="space-y-2">
+                  <Label htmlFor="okapi-github-repo">Your workflow repository</Label>
+                  <Input
+                    id="okapi-github-repo"
+                    placeholder="your-company/ldw-okapi-workflows"
+                    value={okapiGithubRepo}
+                    onChange={(e) => setOkapiGithubRepo(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Do not use Ben408/TMXmatic or the upstream template repo — use a fork you control.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="okapi-github-token">GitHub personal access token</Label>
+                  <Input
+                    id="okapi-github-token"
+                    type="password"
+                    placeholder="ghp_..."
+                    value={okapiGithubToken}
+                    onChange={(e) => setOkapiGithubToken(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">Stored locally in integration_secrets.json on this PC.</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="px-0 h-auto text-xs"
+                  onClick={() => setShowGithubAdvanced((v) => !v)}
+                >
+                  {showGithubAdvanced ? "Hide advanced settings" : "Show advanced settings"}
+                </Button>
+                {showGithubAdvanced && (
+                  <div className="space-y-3 pt-1">
+                    <div className="space-y-2">
+                      <Label htmlFor="okapi-github-workflow">Workflow file</Label>
+                      <Input
+                        id="okapi-github-workflow"
+                        value={okapiGithubWorkflow}
+                        onChange={(e) => setOkapiGithubWorkflow(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="okapi-github-branch">Branch</Label>
+                      <Input
+                        id="okapi-github-branch"
+                        value={okapiGithubBranch}
+                        onChange={(e) => setOkapiGithubBranch(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+                <Button variant="outline" onClick={testGithubBackend} disabled={testingOkapi} className="w-full">
+                  {testingOkapi ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Testing...
+                    </>
+                  ) : (
+                    <>
+                      <Wifi className="mr-2 h-4 w-4" />
+                      Test GitHub connection
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+
+            {okapiEnabled && okapiBackend === "local_tikal" && (
+              <div className="space-y-2">
+                <Label htmlFor="okapi-tikal-path">Local tikal path</Label>
+                <Input
+                  id="okapi-tikal-path"
+                  placeholder="C:\\Okapi\\tikal.bat"
+                  value={okapiTikalPath}
+                  onChange={(e) => setOkapiTikalPath(e.target.value)}
+                />
+              </div>
+            )}
+
+            {okapiEnabled && okapiBackend === "longhorn" && (
+              <div className="space-y-2">
+                <Label htmlFor="okapi-longhorn-url">Longhorn URL</Label>
+                <Input
+                  id="okapi-longhorn-url"
+                  type="text"
+                  placeholder="http://localhost:8080/okapi-longhorn"
+                  value={okapiLonghornUrl}
+                  onChange={(e) => setOkapiLonghornUrl(e.target.value)}
+                />
+              </div>
+            )}
+
+            {okapiEnabled && okapiBackend === "hosted" && (
+              <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+                <p className="text-sm font-medium">Hosted Okapi workspace API</p>
+                <div className="space-y-2">
+                  <Label htmlFor="okapi-api-key">API Key</Label>
+                  <Input
+                    id="okapi-api-key"
+                    type="password"
+                    placeholder="Enter your Okapi API key"
+                    value={okapiApiKey}
+                    onChange={(e) => setOkapiApiKey(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="okapi-api-url">API URL</Label>
+                  <Input
+                    id="okapi-api-url"
+                    type="url"
+                    placeholder="https://api.okapi.example.com"
+                    value={okapiApiUrl}
+                    onChange={(e) => setOkapiApiUrl(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="okapi-workspace-id">Workspace ID</Label>
+                  <Input
+                    id="okapi-workspace-id"
+                    placeholder="Enter your workspace ID"
+                    value={okapiWorkspaceId}
+                    onChange={(e) => setOkapiWorkspaceId(e.target.value)}
+                  />
+                </div>
+                <Button variant="outline" onClick={testHostedConnection} disabled={testingOkapi} className="w-full">
+                  {testingOkapi ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Testing...
+                    </>
+                  ) : (
+                    <>
+                      <Wifi className="mr-2 h-4 w-4" />
+                      Test hosted workspace
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
 

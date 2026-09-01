@@ -15,6 +15,7 @@ import {
 import { Loader2 } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import { WorkspaceFile } from "./tmx-workspace"
+import { ldwApi } from "@/lib/ldw-api"
 
 type PipelineStep = {
   id: string
@@ -40,8 +41,8 @@ export function PipelineBuilder({ files }: PipelineBuilderProps) {
   useEffect(() => {
     const load = async () => {
       const [opsRes, pyRes] = await Promise.all([
-        fetch("/api/okapi/operations"),
-        fetch("/api/okapi/python-operations"),
+        fetch(ldwApi("/api/okapi/operations")),
+        fetch(ldwApi("/api/okapi/python-operations")),
       ])
       const merged: CatalogStep[] = []
       if (opsRes.ok) {
@@ -97,7 +98,7 @@ export function PipelineBuilder({ files }: PipelineBuilderProps) {
       return
     }
     const id = name.trim().toLowerCase().replace(/\s+/g, "_")
-    const res = await fetch("/api/pipeline-templates", {
+    const res = await fetch(ldwApi("/api/pipeline-templates"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, name, description, category: "custom", steps }),
@@ -117,7 +118,7 @@ export function PipelineBuilder({ files }: PipelineBuilderProps) {
       const form = new FormData()
       form.append("file", files[0].originalData, files[0].name)
       form.append("steps_json", JSON.stringify(steps))
-      const res = await fetch("/api/execute-pipeline", { method: "POST", body: form })
+      const res = await fetch(ldwApi("/api/execute-pipeline"), { method: "POST", body: form })
       if (!res.ok) {
         const err = await res.json()
         throw new Error(err.error || res.statusText)
@@ -128,7 +129,7 @@ export function PipelineBuilder({ files }: PipelineBuilderProps) {
       const deadline = Date.now() + 120_000
       while (status !== "completed" && Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 500))
-        const poll = await fetch(`/api/okapi/status/${jobId}`)
+        const poll = await fetch(ldwApi(`/api/okapi/status/${jobId}`))
         status = (await poll.json()).status
         if (status === "failed") throw new Error("pipeline job failed")
       }

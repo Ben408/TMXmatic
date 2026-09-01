@@ -77,6 +77,9 @@ export function WorkspaceFiles({
     <Card>
       <CardHeader>
         <CardTitle>Workspace Files ({files.length})</CardTitle>
+        <p className="text-sm text-muted-foreground font-normal">
+          Click a file to select it for TMX operations and Okapi pipelines.
+        </p>
       </CardHeader>
       <CardContent className="relative">
         <ScrollArea className="pr-4" style={{ height: `${height}px` }}>
