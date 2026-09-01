@@ -12,6 +12,7 @@ from typing import Any
 
 import requests
 
+from ldw_core.okapi.github_policy import validate_github_repo
 from ldw_core.okapi.operation_registry import OkapiOperation
 from ldw_core.okapi.runners import OkapiRunResult, OkapiRunner, RunnerHealth
 
@@ -42,20 +43,52 @@ class GitHubActionsRunner(OkapiRunner):
         )
 
     def health_check(self) -> RunnerHealth:
-        if not self._token or not self._repo:
+        if not self._token:
             return RunnerHealth(
                 self.backend_id,
                 False,
-                "Set github_token (secrets) and github_repo (e.g. user/ldw-okapi-workflows)",
+                "Add a GitHub personal access token with repo and workflow permissions.",
             )
+        ok, message = validate_github_repo(self._repo)
+        if not ok:
+            return RunnerHealth(self.backend_id, False, message)
         try:
             response = self._session.get(
                 f"https://api.github.com/repos/{self._repo}",
                 timeout=20,
             )
-            if response.status_code == 200:
-                return RunnerHealth(self.backend_id, True, f"github repo {self._repo} reachable")
-            return RunnerHealth(self.backend_id, False, f"github API {response.status_code}")
+            if response.status_code == 401:
+                return RunnerHealth(self.backend_id, False, "GitHub token was rejected. Check the PAT and its scopes.")
+            if response.status_code == 404:
+                return RunnerHealth(
+                    self.backend_id,
+                    False,
+                    f"Repository {self._repo} was not found or your token cannot access it.",
+                )
+            if response.status_code != 200:
+                return RunnerHealth(self.backend_id, False, f"GitHub API returned {response.status_code}")
+            workflow_resp = self._session.get(
+                f"https://api.github.com/repos/{self._repo}/actions/workflows/{self._workflow}",
+                timeout=20,
+            )
+            if workflow_resp.status_code == 404:
+                return RunnerHealth(
+                    self.backend_id,
+                    False,
+                    f"Workflow {self._workflow} was not found in {self._repo}. "
+                    "Fork the ldw-okapi-workflows template and use the default workflow file.",
+                )
+            if workflow_resp.status_code != 200:
+                return RunnerHealth(
+                    self.backend_id,
+                    False,
+                    f"Could not verify workflow ({workflow_resp.status_code}).",
+                )
+            return RunnerHealth(
+                self.backend_id,
+                True,
+                f"GitHub ready — {self._repo} ({self._workflow} on {self._branch})",
+            )
         except requests.RequestException as exc:
             return RunnerHealth(self.backend_id, False, str(exc))
 
@@ -66,6 +99,11 @@ class GitHubActionsRunner(OkapiRunner):
         work_dir: str,
         options: dict[str, Any] | None = None,
     ) -> OkapiRunResult:
+        ok, message = validate_github_repo(self._repo)
+        if not ok:
+            return OkapiRunResult(False, [], "", message)
+        if not self._token:
+            return OkapiRunResult(False, [], "", "GitHub token is not configured.")
         opts = options or {}
         input_url = opts.get("input_url")
         if not input_url:

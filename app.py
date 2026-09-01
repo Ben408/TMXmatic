@@ -36,7 +36,8 @@ from scripts.clean_tmx_for_mt import clean_tmx_for_mt
 from scripts.integration_apis import (
     IntegrationSettings, 
     get_okapi_client,
-    test_integration_connection
+    test_integration_connection,
+    test_okapi_processing_backend,
 )
 import json
 from dependency_manager import DependencyManager, DependencyCategories
@@ -800,9 +801,15 @@ def xliff_tmx_leverage():
         xliff_file.save(xliff_path)
         tmx_file.save(tmx_path)
         
+        output_file = None
+        target_lang = (request.form.get("target_lang") or "").strip() or None
         try:
             # Process the files
-            output_file, stats = leverage_tmx_into_xliff(tmx_path, xliff_path)
+            output_file, stats = leverage_tmx_into_xliff(
+                tmx_path,
+                xliff_path,
+                target_lang=target_lang,
+            )
             
             # Return both the file and stats in the response
             response = make_response(send_file(
@@ -815,8 +822,8 @@ def xliff_tmx_leverage():
             return response
             
         finally:
-            # Clean up uploaded files
-            for filepath in [xliff_path, tmx_path, output_file]:
+            # Clean up uploaded inputs (keep leveraged output for send_file)
+            for filepath in [xliff_path, tmx_path]:
                 try:
                     if os.path.exists(filepath):
                         os.remove(filepath)
@@ -878,6 +885,12 @@ def settings():
             current_settings = IntegrationSettings.load_settings()
             
             if 'okapi' in data:
+                from ldw_core.okapi.github_policy import validate_github_repo
+                repo = (data['okapi'].get('github_repo') or '').strip()
+                if repo:
+                    ok, err = validate_github_repo(repo)
+                    if not ok:
+                        return jsonify({'error': err}), 400
                 current_settings['okapi'].update(data['okapi'])
             
             if IntegrationSettings.save_settings(current_settings):
@@ -1052,7 +1065,14 @@ def test_connection():
         override_settings = {}
         if 'okapi' in data:
             override_settings['okapi'] = data['okapi']
-        success, result = test_integration_connection(integration, override_settings=override_settings or None)
+
+        if integration in ('okapi_github', 'okapi_docker', 'okapi_processing'):
+            backend = 'github' if integration == 'okapi_github' else 'docker'
+            if integration == 'okapi_processing':
+                backend = (data.get('backend') or override_settings.get('okapi', {}).get('backend') or '').lower()
+            success, result = test_okapi_processing_backend(backend, override_settings.get('okapi'))
+        else:
+            success, result = test_integration_connection(integration, override_settings=override_settings or None)
         
         # Build response with error details
         response_data = {

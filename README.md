@@ -89,13 +89,13 @@ Backend health is also available at `GET http://127.0.0.1:5000/api/okapi/backend
 
 ### GitHub Actions backend (optional)
 
-1. Fork [ldw-okapi-workflows](https://github.com/Ben408/ldw-okapi-workflows) (workflow: `okapi-ops.yml`).
-2. In LDW **Settings**, set **Backend** to **GitHub Actions**, your **GitHub repo** (`owner/ldw-okapi-workflows`), and a PAT with `workflow` scope (store in `integration_secrets.json` as `github_token` or use env `OKAPI_GITHUB_TOKEN`).
-3. Smoke test (optional):
+Use this when Docker is not available and your organization runs Okapi in **its own GitHub fork** (not on shared TMXmatic Actions).
 
-   ```powershell
-   .\.venv\Scripts\python.exe scripts\okapi_smoke.py github
-   ```
+1. Fork the public template [ldw-okapi-workflows](https://github.com/Ben408/ldw-okapi-workflows) to `your-company/ldw-okapi-workflows` (your fork may be private).
+2. In LDW **Settings → Okapi**, choose **GitHub Actions**, enter your fork and a PAT, then **Test GitHub connection**.
+3. LDW **rejects** `Ben408/TMXmatic` and the upstream template repo as run targets — you must use a fork you control.
+
+The template repo is **public** so anyone can fork it; security comes from **your PAT** and **your fork**, not from hiding the workflow YAML.
 
 ### Using Okapi in the UI
 
