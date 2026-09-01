@@ -483,8 +483,8 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
                 <Label htmlFor="okapi-longhorn-url">Longhorn URL</Label>
                 <Input
                   id="okapi-longhorn-url"
-                  type="url"
-                  placeholder="https://longhorn.example.com"
+                  type="text"
+                  placeholder="http://localhost:8080/okapi-longhorn"
                   value={okapiLonghornUrl}
                   onChange={(e) => setOkapiLonghornUrl(e.target.value)}
                 />

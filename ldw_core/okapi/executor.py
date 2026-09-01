@@ -10,7 +10,7 @@ from typing import Any
 
 from ldw_core.okapi.config import load_okapi_config
 from ldw_core.okapi.operation_registry import OkapiOperationRegistry
-from ldw_core.okapi.runners import OkapiRunResult, build_runner
+from ldw_core.okapi.runners import OkapiRunResult, build_runner, _validate_xliff_output
 
 
 def _content_hash(path: str, operation_id: str, options: dict[str, Any]) -> str:
@@ -76,7 +76,9 @@ class OkapiExecutor:
             with open(cached_marker, encoding="utf-8") as handle:
                 cached = json.load(handle)
             outputs = [os.path.join(cache_dir, name) for name in cached.get("artifacts", [])]
-            if all(os.path.isfile(p) for p in outputs):
+            if all(os.path.isfile(p) for p in outputs) and all(
+                not p.lower().endswith((".xlf", ".xliff")) or _validate_xliff_output(p) for p in outputs
+            ):
                 os.makedirs(work_dir, exist_ok=True)
                 copied: list[str] = []
                 for src in outputs:
@@ -88,13 +90,21 @@ class OkapiExecutor:
         runner = build_runner(active, self._app_path, cfg)
         result = runner.run_operation(op, input_path, work_dir, opts)
         if result.success and result.output_files:
-            os.makedirs(cache_dir, exist_ok=True)
-            names: list[str] = []
-            for src in result.output_files:
-                name = os.path.basename(src)
-                dest = os.path.join(cache_dir, name)
-                shutil.copy2(src, dest)
-                names.append(name)
-            with open(cached_marker, "w", encoding="utf-8") as handle:
-                json.dump({"operation": operation_id, "artifacts": names}, handle, indent=2)
+            valid_outputs = [
+                p
+                for p in result.output_files
+                if not p.lower().endswith((".xlf", ".xliff")) or _validate_xliff_output(p)
+            ]
+            if len(valid_outputs) != len(result.output_files):
+                result = OkapiRunResult(False, [], result.log, "Okapi produced invalid XLIFF output")
+            else:
+                os.makedirs(cache_dir, exist_ok=True)
+                names: list[str] = []
+                for src in result.output_files:
+                    name = os.path.basename(src)
+                    dest = os.path.join(cache_dir, name)
+                    shutil.copy2(src, dest)
+                    names.append(name)
+                with open(cached_marker, "w", encoding="utf-8") as handle:
+                    json.dump({"operation": operation_id, "artifacts": names}, handle, indent=2)
         return result

@@ -55,11 +55,11 @@ def load_okapi_config(app_path: str | None = None) -> dict[str, Any]:
         "workspace_id": "",
     }
     if os.path.isfile(public_path):
-        with open(public_path, encoding="utf-8") as handle:
+        with open(public_path, encoding="utf-8-sig") as handle:
             public = json.load(handle)
         config.update(public.get("okapi", {}))
     if os.path.isfile(secrets_path):
-        with open(secrets_path, encoding="utf-8") as handle:
-            secrets = json.load(f)
+        with open(secrets_path, encoding="utf-8-sig") as handle:
+            secrets = json.load(handle)
         config.update(secrets.get("okapi", {}))
     return config

@@ -13,7 +13,7 @@ operations:
     complexity: medium
     tikal_mode: extract
     inputs:
-      formats: [docx, doc, xlsx, xls, pptx, ppt, html, htm, xml, json, idml, po, properties, srt, vtt, tmx, xliff, xlf, csv, tsv, txt, md, yaml, yml, zip]
+      formats: [docx, doc, xlsx, xls, pptx, ppt, html, htm, xhtml, xml, json, idml, po, properties, srt, vtt, tmx, xliff, xlf, csv, tsv, txt, md, yaml, yml, zip]
     outputs:
       primary: converted.xlf
       mime: application/xliff+xml

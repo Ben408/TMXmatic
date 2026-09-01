@@ -53,14 +53,20 @@ cd "F:\Language Data Workbench"
 .\scripts\build_okapi_tikal_image.ps1
 .\.venv\Scripts\python.exe scripts\okapi_smoke.py docker
 
-# GitHub (optional — needs secrets or env)
-.\.venv\Scripts\python.exe scripts\okapi_smoke.py github
+# GitHub fork (needs PAT in Settings or env)
+.\.venv\Scripts\python.exe scripts\okapi_smoke.py github --full
+.\.venv\Scripts\python.exe scripts\okapi_smoke.py github --full --roundtrip
+.\.venv\Scripts\python.exe scripts\okapi_smoke.py compare   # Docker vs GHA parity
 ```
 
 ---
 
-## Next (Phase 3+)
+## Next (Phase 2.5 / 3)
 
+- Template import/export UI + `example_templates/`
+- Okapi panel backend health in Settings
+- `integration_settings.json.example` for new installs
+- **Longhorn:** `LonghornProjectClient` (replace fantasy API); lab E2E; beta in UI
 - `ldw-llm-quality` module install + XLIFF QA pipeline steps
-- Hermes Slack document-translate job glue
-- Okapi DOCX round-trip pilot on production Docker host
+- Hermes Slack document-translate job glue (Rung 2)
+- Language pair options in UI/registry (P0 Phase 3; pilot `en-us`/`fr-fr` in workflow + `tikal_options.py`)

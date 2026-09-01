@@ -42,7 +42,18 @@ jobs:
 
       - name: Install Okapi tikal
         run: |
-          curl -fsSL -o okapi.zip "https://okapiframework.org/binaries/main/${OKAPI_VERSION}/okapi-apps_gtk2-linux-x86_64_${OKAPI_VERSION}.zip"
+          set -euo pipefail
+          OKAPI_URLS=(
+            "https://github.com/Ben408/ldw-okapi-workflows/releases/download/okapi-1.48.0/okapi-apps_gtk2-linux-x86_64_1.48.0.zip"
+            "https://okapiframework.org/binaries/main/${OKAPI_VERSION}/okapi-apps_gtk2-linux-x86_64_${OKAPI_VERSION}.zip"
+          )
+          for url in "${OKAPI_URLS[@]}"; do
+            if curl -fsSL -o okapi.zip "$url" && unzip -tq okapi.zip; then
+              break
+            fi
+            rm -f okapi.zip
+          done
+          test -f okapi.zip
           unzip -q okapi.zip -d "$HOME/okapi"
           echo "$HOME/okapi" >> "$GITHUB_PATH"
           printf '#!/bin/bash\nexec "$HOME/okapi/tikal.sh" "$@"\n' > "$HOME/okapi/tikal"
@@ -55,33 +66,84 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          download_url() {
+            local url="$1"
+            local dest="$2"
+            if [[ "$url" =~ raw\.githubusercontent\.com/([^/]+)/([^/]+)/([^/]+)/(.+) ]]; then
+              local owner="${BASH_REMATCH[1]}"
+              local repo="${BASH_REMATCH[2]}"
+              local ref="${BASH_REMATCH[3]}"
+              local path="${BASH_REMATCH[4]}"
+              curl -fsSL \
+                -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                -H "Accept: application/vnd.github.raw" \
+                "https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${ref}" \
+                -o "$dest"
+            else
+              curl -fsSL "$url" -o "$dest"
+            fi
+          }
           if [[ "$INPUT_URL" =~ raw\.githubusercontent\.com/([^/]+)/([^/]+)/([^/]+)/(.+) ]]; then
-            owner="${BASH_REMATCH[1]}"
-            repo="${BASH_REMATCH[2]}"
-            ref="${BASH_REMATCH[3]}"
-            path="${BASH_REMATCH[4]}"
-            input_file=$(basename "$path")
-            curl -fsSL \
-              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              -H "Accept: application/vnd.github.raw" \
-              "https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${ref}" \
-              -o "$input_file"
+            input_file=$(basename "${BASH_REMATCH[4]}")
           else
             input_file="input.bin"
-            curl -fsSL "$INPUT_URL" -o "$input_file"
           fi
+          download_url "$INPUT_URL" "$input_file"
           echo "input_file=$input_file" >> "$GITHUB_ENV"
 
       - name: Run operation
+        env:
+          OPTIONS_JSON: ${{ github.event.inputs.options_json }}
+          GITHUB_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
+          SRC_LANG=$(echo "$OPTIONS_JSON" | jq -r '.source_lang // "en-us"')
+          TGT_LANG=$(echo "$OPTIONS_JSON" | jq -r '.target_lang // "fr-fr"')
+          COMPANION_URL=$(echo "$OPTIONS_JSON" | jq -r '.companion_url // empty')
+          download_url() {
+            local url="$1"
+            local dest="$2"
+            if [[ "$url" =~ raw\.githubusercontent\.com/([^/]+)/([^/]+)/([^/]+)/(.+) ]]; then
+              local owner="${BASH_REMATCH[1]}"
+              local repo="${BASH_REMATCH[2]}"
+              local ref="${BASH_REMATCH[3]}"
+              local path="${BASH_REMATCH[4]}"
+              curl -fsSL \
+                -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                -H "Accept: application/vnd.github.raw" \
+                "https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${ref}" \
+                -o "$dest"
+            else
+              curl -fsSL "$url" -o "$dest"
+            fi
+          }
           OP="${{ github.event.inputs.operation }}"
           case "$OP" in
-            convert) tikal -x "$input_file" -od . -nocopy -sl en-us -tl fr-fr && mv "${input_file}.xlf" converted.xlf ;;
-            merge) tikal -m "$input_file" -od . && test -e merged-output || cp -a . merged-output ;;
-            qa) tikal -x "$input_file" -od . -seg -nocopy ;;
-            terms) tikal -x "$input_file" -od . -tt -nocopy ;;
+            convert)
+              tikal -x "$input_file" -od . -nocopy -sl "$SRC_LANG" -tl "$TGT_LANG"
+              cp "${input_file}.xlf" converted.xlf
+              ;;
+            merge)
+              if [[ -n "$COMPANION_URL" ]]; then
+                companion_file=$(basename "${COMPANION_URL##*/}")
+                download_url "$COMPANION_URL" "$companion_file"
+              fi
+              merge_xlf="$input_file"
+              if [[ "$input_file" == "converted.xlf" ]]; then
+                merge_xlf=$(ls -1 *.xlf | grep -v '^converted\.xlf$' | head -n1 || true)
+                if [[ -z "$merge_xlf" ]]; then
+                  echo "merge requires companion XLIFF named like source.docx.xlf when input is converted.xlf"
+                  exit 2
+                fi
+              fi
+              tikal -m "$merge_xlf" -od . -sl "$SRC_LANG" -tl "$TGT_LANG"
+              doc_out="${merge_xlf%.xlf}"
+              mkdir -p merged-output
+              cp -a "$doc_out" merged-output/
+              ;;
+            qa) tikal -x "$input_file" -od . -seg -nocopy -sl "$SRC_LANG" -tl "$TGT_LANG" ;;
+            terms) tikal -x "$input_file" -od . -tt -nocopy -sl "$SRC_LANG" -tl "$TGT_LANG" ;;
             *) echo "Unknown operation: $OP"; exit 2 ;;
           esac
 
@@ -91,7 +153,8 @@ jobs:
           name: okapi-${{ github.event.inputs.operation }}-artifacts
           path: |
             converted.xlf
-            merged-output
+            *.xlf
+            merged-output/**
             qa-report.html
             terms.tbx
           if-no-files-found: ignore

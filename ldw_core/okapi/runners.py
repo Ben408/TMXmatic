@@ -19,7 +19,7 @@ from ldw_core.okapi.config import (
     DEFAULT_OKAPI_DOCKER_IMAGE,
     load_okapi_config,
 )
-from ldw_core.okapi.operation_registry import OkapiOperation
+from ldw_core.okapi.tikal_options import merge_output_path, merge_xliff_path, tikal_lang_args
 
 
 @dataclass
@@ -61,25 +61,57 @@ class OkapiRunner(ABC):
         """Execute one registry operation and write artifacts under ``work_dir``."""
 
 
+def _validate_xliff_output(path: str) -> bool:
+    """Reject truncated or malformed XLIFF before treating Okapi output as success."""
+    try:
+        from lxml import etree
+
+        parser = etree.XMLParser(recover=False)
+        etree.parse(path, parser)
+        return True
+    except Exception:
+        return False
+
+
+_HTML_EXTENSIONS = frozenset({"html", "htm", "xhtml"})
+
+
+def _html_filter_args(input_path: str | None) -> list[str]:
+    """Use lenient HTML filter — wellFormed breaks on Intacct help XHTML."""
+    if not input_path:
+        return []
+    ext = os.path.splitext(input_path)[1].lstrip(".").lower()
+    if ext in _HTML_EXTENSIONS:
+        return ["-fc", "okf_html"]
+    return []
+
+
+_NO_COPY_ARGS = ["-nocopy"]
+
+
 def _build_tikal_args(
     operation: OkapiOperation,
     input_name: str,
     output_name: str,
     *,
     output_dir: str,
+    input_path: str | None = None,
+    options: dict[str, Any] | None = None,
 ) -> list[str]:
     """Map registry ``tikal_mode`` to tikal CLI arguments (Okapi 1.48+ uses ``-od``)."""
     _ = output_name
     mode = operation.tikal_mode
+    html_args = _html_filter_args(input_path or input_name)
+    lang_args = tikal_lang_args(options)
     if mode == "extract":
-        return ["-x", input_name, "-od", output_dir]
+        return ["-x", input_name, "-od", output_dir, *_NO_COPY_ARGS, *lang_args, *html_args]
     if mode == "merge":
-        return ["-m", input_name, "-od", output_dir]
+        return ["-m", input_name, "-od", output_dir, *lang_args]
     if mode == "qa":
-        return ["-x", input_name, "-od", output_dir, "-seg"]
+        return ["-x", input_name, "-od", output_dir, "-seg", *_NO_COPY_ARGS, *lang_args, *html_args]
     if mode == "terms":
-        return ["-x", input_name, "-od", output_dir, "-tt"]
-    return ["-x", input_name, "-od", output_dir]
+        return ["-x", input_name, "-od", output_dir, "-tt", *_NO_COPY_ARGS, *lang_args, *html_args]
+    return ["-x", input_name, "-od", output_dir, *_NO_COPY_ARGS, *lang_args, *html_args]
 
 
 def _finalize_tikal_output(
@@ -169,14 +201,23 @@ class LocalTikalRunner(OkapiRunner):
         work_dir: str,
         options: dict[str, Any] | None = None,
     ) -> OkapiRunResult:
-        _ = options
+        opts = options or {}
         input_name = os.path.basename(input_path)
         staged_input = os.path.join(work_dir, input_name)
         os.makedirs(work_dir, exist_ok=True)
         if os.path.abspath(input_path) != os.path.abspath(staged_input):
             shutil.copy2(input_path, staged_input)
         output_name = operation.output_primary
-        args = _build_tikal_args(operation, input_name, output_name, output_dir=".")
+        merge_input = merge_xliff_path(work_dir, staged_input) if operation.tikal_mode == "merge" else staged_input
+        tikal_input_name = os.path.basename(merge_input)
+        args = _build_tikal_args(
+            operation,
+            tikal_input_name if operation.tikal_mode == "merge" else input_name,
+            output_name,
+            output_dir=".",
+            input_path=staged_input,
+            options=opts,
+        )
         cmd = [self._tikal_path, *args]
         try:
             completed = subprocess.run(
@@ -190,6 +231,11 @@ class LocalTikalRunner(OkapiRunner):
             log = (completed.stdout or "") + (completed.stderr or "")
             if completed.returncode != 0:
                 return OkapiRunResult(False, [], log, f"tikal exit {completed.returncode}")
+            if operation.tikal_mode == "merge":
+                output_path = merge_output_path(work_dir, merge_input)
+                if not output_path:
+                    return OkapiRunResult(False, [], log, "merge produced no output document")
+                return OkapiRunResult(True, [output_path], log)
             output_path = _finalize_tikal_output(work_dir, staged_input, output_name)
             if not output_path:
                 return OkapiRunResult(False, [], log, f"missing output {output_name}")
@@ -257,18 +303,22 @@ class DockerTikalRunner(OkapiRunner):
         work_dir: str,
         options: dict[str, Any] | None = None,
     ) -> OkapiRunResult:
-        _ = options
+        opts = options or {}
         os.makedirs(work_dir, exist_ok=True)
         input_name = os.path.basename(input_path)
         staged_input = os.path.join(work_dir, input_name)
         if os.path.abspath(input_path) != os.path.abspath(staged_input):
             shutil.copy2(input_path, staged_input)
         output_name = operation.output_primary
+        merge_input = merge_xliff_path(work_dir, staged_input) if operation.tikal_mode == "merge" else staged_input
+        tikal_input_name = f"/work/{os.path.basename(merge_input)}"
         tikal_args = _build_tikal_args(
             operation,
-            f"/work/{input_name}",
+            tikal_input_name if operation.tikal_mode == "merge" else f"/work/{input_name}",
             output_name,
             output_dir="/work",
+            input_path=staged_input,
+            options=opts,
         )
         cmd = [
             "docker",
@@ -289,11 +339,23 @@ class DockerTikalRunner(OkapiRunner):
                 check=False,
             )
             log = (completed.stdout or "") + (completed.stderr or "")
-            if completed.returncode != 0:
-                return OkapiRunResult(False, [], log, f"docker tikal exit {completed.returncode}")
+            if operation.tikal_mode == "merge":
+                output_path = merge_output_path(work_dir, merge_input)
+                if completed.returncode != 0 or not output_path:
+                    return OkapiRunResult(False, [], log, f"docker tikal merge failed (exit {completed.returncode})")
+                return OkapiRunResult(True, [output_path], log)
             output_path = _finalize_tikal_output(work_dir, staged_input, output_name)
-            if not output_path:
-                return OkapiRunResult(False, [], log, f"missing output {output_name}")
+            if completed.returncode != 0:
+                if output_path and _validate_xliff_output(output_path):
+                    return OkapiRunResult(True, [output_path], log)
+                if output_path:
+                    try:
+                        os.remove(output_path)
+                    except OSError:
+                        pass
+                return OkapiRunResult(False, [], log, f"docker tikal exit {completed.returncode}")
+            if not output_path or not _validate_xliff_output(output_path):
+                return OkapiRunResult(False, [], log, f"missing or invalid output {output_name}")
             return OkapiRunResult(True, [output_path], log)
         except subprocess.TimeoutExpired:
             return OkapiRunResult(False, [], "", "docker tikal timed out")

@@ -234,6 +234,17 @@ class GitHubActionsRunner(OkapiRunner):
                 zf.extractall(work_dir)
             for root, _, files in os.walk(work_dir):
                 for name in files:
-                    if name == expected or name.endswith((".xlf", ".xliff", ".html", ".tbx")):
-                        outputs.append(os.path.join(root, name))
+                    path = os.path.join(root, name)
+                    if path in outputs:
+                        continue
+                    if name == expected:
+                        outputs.append(path)
+                    elif operation.tikal_mode == "merge" and name.endswith((".docx", ".doc", ".xlsx", ".pptx")):
+                        outputs.append(path)
+                    elif operation.tikal_mode == "extract" and (
+                        name.endswith((".xlf", ".xliff")) or name == expected
+                    ):
+                        outputs.append(path)
+                    elif name.endswith((".html", ".tbx")):
+                        outputs.append(path)
         return outputs

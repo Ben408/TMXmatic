@@ -16,6 +16,7 @@ export const WORKSPACE_UPLOAD_EXTENSIONS = [
   "ppt",
   "html",
   "htm",
+  "xhtml",
   "xml",
   "json",
   "idml",

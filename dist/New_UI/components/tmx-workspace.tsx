@@ -383,6 +383,76 @@ export function TMXWorkspace() {
         return
       }
 
+      if (operationId === "xliff_tmx_leverage") {
+        const isXliff = (name: string) => /\.(xlf|xliff)$/i.test(name)
+        const isTmx = (name: string) => /\.tmx$/i.test(name)
+        const workspaceTmx = files.filter((f) => isTmx(f.name))
+        const xliffTargets = selectedFileIds
+          .map((id) => files.find((f) => f.id === id))
+          .filter((f): f is WorkspaceFile => !!f && isXliff(f.name))
+
+        if (xliffTargets.length === 0) {
+          throw new Error("Select an XLIFF file (.xlf / .xliff) to leverage.")
+        }
+        if (workspaceTmx.length === 0) {
+          throw new Error("Add a TMX file to the workspace (e.g. exported Phrase help TM).")
+        }
+        const tmxFile =
+          workspaceTmx.length === 1
+            ? workspaceTmx[0]
+            : workspaceTmx.find((f) => selectedFileIds.includes(f.id)) ?? workspaceTmx[0]
+
+        for (const file of xliffTargets) {
+          const formData = new FormData()
+          formData.append("file", file.originalData, file.name)
+          formData.append("tmx_file", tmxFile.originalData, tmxFile.name)
+          const response = await fetch("http://127.0.0.1:5000/api/xliff_tmx_leverage", {
+            method: "POST",
+            body: formData,
+          })
+          if (!response.ok) {
+            const errorText = await response.text()
+            throw new Error(`Leverage failed: ${errorText}`)
+          }
+          const statsHeader = response.headers.get("X-Stats")
+          if (statsHeader) {
+            try {
+              setStats(JSON.parse(statsHeader) as XLIFFStats)
+              setShowStats(true)
+            } catch {
+              /* ignore malformed stats */
+            }
+          }
+          const result = await response.blob()
+          const outName = file.name.replace(/\.(xlf|xliff)$/i, "_leveraged.$1")
+          setFiles((prev) =>
+            prev.map((f) => {
+              if (f.id !== file.id) return f
+              const processedFile = new File([result], outName, { type: f.type })
+              return {
+                ...f,
+                status: "processed",
+                processedData: processedFile,
+                operations: [
+                  ...f.operations,
+                  {
+                    id: crypto.randomUUID(),
+                    name: OPERATIONS.find((op) => op.id === operationId)?.name || operationId,
+                    timestamp: new Date(),
+                    status: "completed",
+                  },
+                ],
+              }
+            }),
+          )
+        }
+        toast({
+          title: "TMX leverage complete",
+          description: `Leveraged ${tmxFile.name} into ${xliffTargets.length} XLIFF file(s).`,
+        })
+        return
+      }
+
       // ...existing code for other operations...
       for (const fileId of selectedFileIds) {
         const file = files.find(f => f.id === fileId)
