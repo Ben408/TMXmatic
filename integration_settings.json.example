@@ -1,0 +1,11 @@
+{
+  "okapi": {
+    "enabled": false,
+    "backend": "docker",
+    "docker_image": "ldw-okapi-tikal:1.48",
+    "tikal_path": "",
+    "github_workflow": "okapi-ops.yml",
+    "github_branch": "main",
+    "longhorn_url": ""
+  }
+}

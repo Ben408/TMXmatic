@@ -23,6 +23,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import { toast } from "@/components/ui/use-toast"
+import { Badge } from "@/components/ui/badge"
 
 const OKAPI_WORKFLOWS_FORK_URL = "https://github.com/Ben408/ldw-okapi-workflows/fork"
 const BLOCKED_GITHUB_REPOS = new Set(["ben408/tmxmatic", "ben408/ldw-okapi-workflows"])
@@ -41,7 +42,14 @@ function validateGithubRepoClient(repo: string): string | null {
   return null
 }
 
-type OkapiTestIntegration = "okapi" | "okapi_docker" | "okapi_github"
+type OkapiTestIntegration = "okapi" | "okapi_docker" | "okapi_github" | "okapi_longhorn" | "okapi_local_tikal"
+
+type BackendStatusRow = {
+  backend: string
+  available: boolean
+  message: string
+  active: boolean
+}
 
 interface SettingsPageProps {
   onBack: () => void
@@ -80,6 +88,9 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
   const [connectionDialogOpen, setConnectionDialogOpen] = useState(false)
   const [connectionResult, setConnectionResult] = useState<ConnectionTestResult | null>(null)
   const [currentTestIntegration, setCurrentTestIntegration] = useState<string>("")
+  const [backendStatuses, setBackendStatuses] = useState<BackendStatusRow[]>([])
+  const [activeBackendId, setActiveBackendId] = useState("docker")
+  const [loadingBackends, setLoadingBackends] = useState(false)
 
   // Load settings on mount
   useEffect(() => {
@@ -89,6 +100,27 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
   useEffect(() => {
     setIsMounted(true)
   }, [])
+
+  const loadBackendStatuses = async () => {
+    try {
+      setLoadingBackends(true)
+      const response = await fetch("http://127.0.0.1:5000/api/okapi/backends/status", { cache: "no-store" })
+      if (!response.ok) return
+      const data = await response.json()
+      setBackendStatuses(data.backends || [])
+      setActiveBackendId(data.active_backend || "docker")
+    } catch (error) {
+      console.error("backend status load failed", error)
+    } finally {
+      setLoadingBackends(false)
+    }
+  }
+
+  useEffect(() => {
+    if (okapiEnabled) {
+      loadBackendStatuses()
+    }
+  }, [okapiEnabled, okapiBackend])
 
   const loadSettings = async () => {
     try {
@@ -165,6 +197,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
           title: "Success",
           description: "Settings saved successfully",
         })
+        loadBackendStatuses()
       } else {
         const error = await response.json()
         throw new Error(error.error || "Failed to save settings")
@@ -247,6 +280,16 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
       }
       return validateGithubRepoClient(okapiGithubRepo)
     })
+
+  const testLonghornBackend = () =>
+    runConnectionTest("okapi_longhorn", "Longhorn (beta)", () => {
+      if (!okapiLonghornUrl.trim()) {
+        return "Enter your Longhorn base URL (for example http://localhost:8080/okapi-longhorn)."
+      }
+      return null
+    })
+
+  const testLocalTikalBackend = () => runConnectionTest("okapi_local_tikal", "Local tikal")
 
   return (
     <div className="container mx-auto py-6 px-4 md:px-6 min-h-screen">
@@ -333,7 +376,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
                   <SelectItem value="docker">Docker tikal (recommended on this PC)</SelectItem>
                   <SelectItem value="github">GitHub Actions (your organization&apos;s fork)</SelectItem>
                   <SelectItem value="hosted">Hosted Okapi workspace</SelectItem>
-                  <SelectItem value="longhorn">External Longhorn API</SelectItem>
+                  <SelectItem value="longhorn">Longhorn server (beta)</SelectItem>
                   <SelectItem value="local_tikal">Local tikal (IT only — not recommended)</SelectItem>
                 </SelectContent>
               </Select>
@@ -341,6 +384,32 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
                 Jobs always run in the backend you choose here. LDW never uses a shared TMXmatic GitHub Actions queue.
               </p>
             </div>
+
+            {okapiEnabled && (
+              <div className="rounded-lg border bg-muted/20 p-4 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <Label>Backend health</Label>
+                  <Button variant="ghost" size="sm" onClick={loadBackendStatuses} disabled={loadingBackends}>
+                    {loadingBackends ? <Loader2 className="h-3 w-3 animate-spin" /> : "Refresh"}
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Active backend: <strong>{activeBackendId}</strong>
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {backendStatuses.map((row) => (
+                    <Badge
+                      key={row.backend}
+                      variant={row.available ? "default" : "secondary"}
+                      title={row.message}
+                    >
+                      {row.backend === "longhorn" ? "longhorn (beta)" : row.backend}:{" "}
+                      {row.available ? "ready" : "off"}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {okapiEnabled && okapiBackend === "docker" && (
               <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
@@ -475,6 +544,19 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
                   value={okapiTikalPath}
                   onChange={(e) => setOkapiTikalPath(e.target.value)}
                 />
+                <Button variant="outline" onClick={testLocalTikalBackend} disabled={testingOkapi} className="w-full">
+                  {testingOkapi ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Testing...
+                    </>
+                  ) : (
+                    <>
+                      <Wifi className="mr-2 h-4 w-4" />
+                      Test local tikal
+                    </>
+                  )}
+                </Button>
               </div>
             )}
 
@@ -488,6 +570,22 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
                   value={okapiLonghornUrl}
                   onChange={(e) => setOkapiLonghornUrl(e.target.value)}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Stock Okapi Longhorn (beta). LDW orchestrates ephemeral Rainbow projects — not a custom gateway API.
+                </p>
+                <Button variant="outline" onClick={testLonghornBackend} disabled={testingOkapi} className="w-full">
+                  {testingOkapi ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Testing...
+                    </>
+                  ) : (
+                    <>
+                      <Wifi className="mr-2 h-4 w-4" />
+                      Test Longhorn connection
+                    </>
+                  )}
+                </Button>
               </div>
             )}
 

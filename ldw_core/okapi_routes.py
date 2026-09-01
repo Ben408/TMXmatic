@@ -179,14 +179,18 @@ def create_okapi_blueprint(app_path: str, jobs: JobManager) -> Blueprint:
         template_id = (request.form.get("template_id") or "").strip() or None
         steps_raw = request.form.get("steps_json") or "[]"
         backend = (request.form.get("backend") or "").strip() or None
+        options_raw = request.form.get("options_json") or "{}"
         try:
             import json
 
             steps = json.loads(steps_raw)
             if not isinstance(steps, list):
                 raise ValueError("steps_json must be an array")
+            options = json.loads(options_raw)
+            if not isinstance(options, dict):
+                raise ValueError("options_json must be an object")
         except (ValueError, json.JSONDecodeError) as exc:
-            return jsonify({"error": f"invalid steps_json: {exc}"}), 400
+            return jsonify({"error": f"invalid pipeline JSON: {exc}"}), 400
         if not template_id and not steps:
             return jsonify({"error": "template_id or steps_json is required"}), 400
         file = request.files["file"]
@@ -200,6 +204,7 @@ def create_okapi_blueprint(app_path: str, jobs: JobManager) -> Blueprint:
                 "steps": steps,
                 "input_path": save_path,
                 "backend": backend,
+                "options": options,
             },
         )
         return jsonify({"job": job, "poll_url": f"/api/jobs/{job['id']}"}), 202

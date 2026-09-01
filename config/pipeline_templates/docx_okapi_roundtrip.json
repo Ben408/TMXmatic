@@ -1,0 +1,23 @@
+{
+  "id": "docx_okapi_roundtrip",
+  "name": "DOCX → XLIFF → DOCX",
+  "description": "Okapi extract to XLIFF, then merge back to the original Office package.",
+  "category": "format_conversion",
+  "steps": [
+    {
+      "id": "okapi-extract",
+      "type": "okapi",
+      "operation": "convert",
+      "description": "Extract translatable content to XLIFF"
+    },
+    {
+      "id": "okapi-merge",
+      "type": "okapi",
+      "operation": "merge",
+      "description": "Merge XLIFF into the original DOCX package"
+    }
+  ],
+  "input_requirements": {
+    "formats": ["docx", "doc", "xlsx", "pptx", "html", "idml"]
+  }
+}

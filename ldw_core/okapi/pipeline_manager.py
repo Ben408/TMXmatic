@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import os
+import shutil
 from typing import Any
 
 from ldw_core.okapi.executor import OkapiExecutor
 from ldw_core.okapi.python_steps import run_python_operation
 from ldw_core.okapi.template_manager import PipelineTemplateManager
+
+_PACKAGE_EXTENSIONS = frozenset({".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt", ".idml"})
 
 
 class HybridPipelineManager:
@@ -36,9 +39,12 @@ class HybridPipelineManager:
         input_files: list[str],
         work_dir: str,
         backend: str | None = None,
+        pipeline_options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Run steps sequentially; pass outputs forward as next step inputs."""
         current_files = list(input_files)
+        original_inputs = list(input_files)
+        shared_options = dict(pipeline_options or {})
         step_results: list[dict[str, Any]] = []
         for index, step in enumerate(steps):
             step_type = step.get("type", "okapi")
@@ -57,12 +63,15 @@ class HybridPipelineManager:
                 if not operation:
                     return {"success": False, "error": f"step {step_id} missing operation", "steps": step_results}
                 step_backend = backend or step.get("backend")
+                step_options = {**shared_options, **(step.get("options") or {})}
+                if operation == "merge":
+                    self._stage_merge_companions(work_dir, step_work, original_inputs, current_files[0])
                 result = self._executor.execute(
                     operation,
                     current_files[0],
                     step_work,
                     backend=step_backend,
-                    options=step.get("options") or {},
+                    options=step_options,
                 )
                 step_results.append(
                     {
@@ -108,3 +117,25 @@ class HybridPipelineManager:
                 return {"success": False, "error": f"unknown step type: {step_type}", "steps": step_results}
 
         return {"success": True, "final_outputs": current_files, "steps": step_results}
+
+    @staticmethod
+    def _stage_merge_companions(
+        work_dir: str,
+        step_work: str,
+        original_inputs: list[str],
+        xliff_path: str,
+    ) -> None:
+        """Copy package + XLIFF into merge step dir for tikal (-m)."""
+        os.makedirs(step_work, exist_ok=True)
+        for orig in original_inputs:
+            ext = os.path.splitext(orig)[1].lower()
+            if ext in _PACKAGE_EXTENSIONS:
+                for candidate in (orig, os.path.join(work_dir, os.path.basename(orig))):
+                    if os.path.isfile(candidate):
+                        dest = os.path.join(step_work, os.path.basename(candidate))
+                        if not os.path.isfile(dest):
+                            shutil.copy2(candidate, dest)
+        if os.path.isfile(xliff_path):
+            dest = os.path.join(step_work, os.path.basename(xliff_path))
+            if os.path.abspath(xliff_path) != os.path.abspath(dest):
+                shutil.copy2(xliff_path, dest)

@@ -61,7 +61,21 @@ cd "F:\Language Data Workbench"
 
 ---
 
-## Next (Phase 2.5 / 3)
+## Phase 2.5 — PM polish (in progress)
+
+- [x] Template import/export UI + `example_templates/`
+- [x] Okapi backend health in Settings
+- [x] `integration_settings.json.example` + `integration_secrets.json.example`
+- [x] Language pair fields in Okapi panel (P0 UI)
+- [ ] Template-first run wizard (pick template → confirm file → run)
+
+## Phase 2 close (Longhorn)
+
+- [x] `LonghornProjectClient` + embedded `batch_configs/` (beta)
+- [ ] Lab E2E on stock `okapiframework/okapi-longhorn`
+- [ ] `okapi_smoke.py longhorn` target
+
+## Next (Phase 3+)
 
 - Template import/export UI + `example_templates/`
 - Okapi panel backend health in Settings

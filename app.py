@@ -1066,8 +1066,14 @@ def test_connection():
         if 'okapi' in data:
             override_settings['okapi'] = data['okapi']
 
-        if integration in ('okapi_github', 'okapi_docker', 'okapi_processing'):
-            backend = 'github' if integration == 'okapi_github' else 'docker'
+        if integration in ('okapi_github', 'okapi_docker', 'okapi_longhorn', 'okapi_local_tikal', 'okapi_processing'):
+            backend_map = {
+                'okapi_github': 'github',
+                'okapi_docker': 'docker',
+                'okapi_longhorn': 'longhorn',
+                'okapi_local_tikal': 'local_tikal',
+            }
+            backend = backend_map.get(integration, 'docker')
             if integration == 'okapi_processing':
                 backend = (data.get('backend') or override_settings.get('okapi', {}).get('backend') or '').lower()
             success, result = test_okapi_processing_backend(backend, override_settings.get('okapi'))

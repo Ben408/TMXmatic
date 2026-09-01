@@ -87,6 +87,7 @@ def make_pipeline_job_handler(app_path: str):
             [input_path],
             work_dir,
             backend=params.get("backend"),
+            pipeline_options=params.get("options") or {},
         )
         sidecar = os.path.join(manager._job_dir(job_id), "pipeline-result.json")
         with open(sidecar, "w", encoding="utf-8") as handle:

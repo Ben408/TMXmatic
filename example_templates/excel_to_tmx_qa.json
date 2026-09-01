@@ -1,0 +1,32 @@
+{
+  "id": "excel_to_tmx_qa",
+  "name": "Excel to TMX with QA",
+  "description": "Convert Excel to TMX, merge, deduplicate, then Okapi quality check.",
+  "category": "excel_processing",
+  "steps": [
+    {
+      "id": "convert-excel",
+      "type": "python",
+      "operation": "convert_termweb",
+      "description": "Convert Excel to TMX"
+    },
+    {
+      "id": "merge-tmx",
+      "type": "python",
+      "operation": "merge_tmx",
+      "description": "Merge TMX files"
+    },
+    {
+      "id": "dedupe",
+      "type": "python",
+      "operation": "find_duplicates",
+      "description": "Remove duplicate TUs"
+    },
+    {
+      "id": "okapi-qa",
+      "type": "okapi",
+      "operation": "qa",
+      "description": "Okapi quality assurance report"
+    }
+  ]
+}

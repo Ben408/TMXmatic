@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Minimal Rainbow batch configuration for XLIFF extraction.
+  Validate against your Longhorn lab; export production configs from Rainbow when available.
+-->
+<bertrand xmlns="http://www.okapi-framework.org/ns/bertrand" version="1.0">
+  <batchConfiguration name="xliff_creation">
+    <description>LDW embedded — DOCX/office to XLIFF</description>
+  </batchConfiguration>
+</bertrand>
