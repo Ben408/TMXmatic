@@ -2,39 +2,33 @@
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any
 
 from ldw_core.okapi.executor import OkapiExecutor
+from ldw_core.okapi.python_steps import run_python_operation
+from ldw_core.okapi.template_manager import PipelineTemplateManager
 
 
 class HybridPipelineManager:
-    """Execute mixed pipelines — Okapi steps today; Python steps via operation id map."""
+    """Execute mixed Python/Okapi pipelines with sequential file handoff."""
 
     def __init__(self, app_path: str) -> None:
         self._app_path = app_path
         self._executor = OkapiExecutor(app_path)
-        self._templates_dir = os.path.join(app_path, "config", "pipeline_templates")
+        self._templates = PipelineTemplateManager(app_path)
 
     def list_templates(self) -> list[dict[str, Any]]:
-        """Load JSON pipeline templates shipped with LDW core."""
-        templates: list[dict[str, Any]] = []
-        if not os.path.isdir(self._templates_dir):
-            return templates
-        for name in sorted(os.listdir(self._templates_dir)):
-            if not name.endswith(".json"):
-                continue
-            path = os.path.join(self._templates_dir, name)
-            with open(path, encoding="utf-8") as handle:
-                templates.append(json.load(handle))
-        return templates
+        return self._templates.list_all()
 
     def get_template(self, template_id: str) -> dict[str, Any] | None:
-        for row in self.list_templates():
-            if row.get("id") == template_id:
-                return row
-        return None
+        return self._templates.get(template_id)
+
+    def save_template(self, template: dict[str, Any]) -> dict[str, Any]:
+        return self._templates.save_user_template(template)
+
+    def delete_template(self, template_id: str) -> bool:
+        return self._templates.delete_user_template(template_id)
 
     def execute_steps(
         self,
@@ -55,17 +49,19 @@ class HybridPipelineManager:
                     "error": f"no input files before step {step_id}",
                     "steps": step_results,
                 }
-            if step_type == "okapi":
+            step_work = os.path.join(work_dir, step_id)
+            os.makedirs(step_work, exist_ok=True)
+
+            if step_type in ("okapi", "okapi_github", "okapi_external", "okapi_pipeline"):
                 operation = step.get("operation")
                 if not operation:
                     return {"success": False, "error": f"step {step_id} missing operation", "steps": step_results}
-                step_work = os.path.join(work_dir, step_id)
-                os.makedirs(step_work, exist_ok=True)
+                step_backend = backend or step.get("backend")
                 result = self._executor.execute(
                     operation,
                     current_files[0],
                     step_work,
-                    backend=backend,
+                    backend=step_backend,
                     options=step.get("options") or {},
                 )
                 step_results.append(
@@ -82,18 +78,33 @@ class HybridPipelineManager:
                 if not result.success:
                     return {"success": False, "error": result.error, "steps": step_results}
                 current_files = result.output_files
-            elif step_type == "python":
-                # Python-native steps delegate to LDW scripts (minimal map for Phase 2).
+
+            elif step_type in ("python", "python_native"):
+                operation = step.get("operation")
+                if not operation:
+                    return {"success": False, "error": f"step {step_id} missing operation", "steps": step_results}
+                result = run_python_operation(
+                    operation,
+                    current_files[0],
+                    step_work,
+                    self._app_path,
+                    options=step.get("options") or {},
+                )
                 step_results.append(
                     {
                         "id": step_id,
                         "type": step_type,
-                        "operation": step.get("operation"),
-                        "success": False,
-                        "error": "python pipeline steps: use queue API for now (Phase 2.1)",
+                        "operation": operation,
+                        "success": result.success,
+                        "log": result.log,
+                        "error": result.error,
+                        "outputs": [os.path.basename(p) for p in result.output_files],
                     }
                 )
-                return {"success": False, "error": "python pipeline step not implemented in job runner", "steps": step_results}
+                if not result.success:
+                    return {"success": False, "error": result.error, "steps": step_results}
+                current_files = result.output_files
             else:
                 return {"success": False, "error": f"unknown step type: {step_type}", "steps": step_results}
+
         return {"success": True, "final_outputs": current_files, "steps": step_results}

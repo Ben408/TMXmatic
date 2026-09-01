@@ -1,0 +1,14 @@
+{
+  "id": "format_conversion_xliff",
+  "name": "Format conversion to XLIFF",
+  "description": "Convert any Okapi-supported format to XLIFF for LDW segment work.",
+  "category": "format_conversion",
+  "steps": [
+    {
+      "id": "okapi-convert",
+      "type": "okapi",
+      "operation": "convert",
+      "description": "Extract to XLIFF via tikal"
+    }
+  ]
+}

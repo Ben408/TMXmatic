@@ -20,3 +20,4 @@ modules.json
 # Okapi runtime cache + inbox uploads
 data/okapi_cache/
 uploads/okapi_inbox/
+data/pipeline_templates/

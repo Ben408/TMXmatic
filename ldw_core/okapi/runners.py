@@ -312,14 +312,18 @@ def build_runner(backend: str, app_path: str, config: dict[str, Any] | None = No
     if backend == BACKEND_LOCAL_TIKAL:
         return LocalTikalRunner(cfg.get("tikal_path") or "")
     if backend == BACKEND_GITHUB:
-        return StubRemoteRunner(
-            BACKEND_GITHUB,
-            "GitHub Actions runner not wired yet — fork ldw-okapi-workflows and set github_repo",
+        from ldw_core.okapi.github_runner import GitHubActionsRunner
+
+        return GitHubActionsRunner(
+            token=cfg.get("github_token") or "",
+            repo=cfg.get("github_repo") or "",
+            workflow=cfg.get("github_workflow") or "okapi-ops.yml",
+            branch=cfg.get("github_branch") or "main",
         )
     if backend == BACKEND_LONGHORN:
-        url = cfg.get("longhorn_url") or ""
-        hint = f"Longhorn URL not configured (longhorn_url). Current: {url or 'empty'}"
-        return StubRemoteRunner(BACKEND_LONGHORN, hint)
+        from ldw_core.okapi.longhorn_runner import LonghornRunner
+
+        return LonghornRunner(cfg.get("longhorn_url") or "")
     if backend == BACKEND_HOSTED:
         return HostedWorkspaceRunner(app_path)
     return StubRemoteRunner(backend, f"Unknown Okapi backend: {backend}")

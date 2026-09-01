@@ -41,7 +41,9 @@ def load_okapi_config(app_path: str | None = None) -> dict[str, Any]:
         "docker_image": "okapiframework/okapi:latest",
         "tikal_path": "",
         "github_repo": "",
-        "github_workflow": "okapi-processing.yml",
+        "github_workflow": "okapi-ops.yml",
+        "github_branch": "main",
+        "github_token": "",
         "longhorn_url": "",
         # Hosted workspace client (existing integration_apis.py)
         "api_key": "",

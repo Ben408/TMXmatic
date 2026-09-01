@@ -71,4 +71,20 @@ def test_pipeline_templates(client):
     response = client.get("/api/pipeline-templates")
     assert response.status_code == 200
     templates = response.get_json()["templates"]
-    assert any(t.get("id") == "docx_xliff_roundtrip" for t in templates)
+    ids = {t.get("id") for t in templates}
+    assert "docx_xliff_roundtrip" in ids
+    assert "excel_to_tmx_qa" in ids
+
+
+def test_python_operations_list(client):
+    response = client.get("/api/okapi/python-operations")
+    assert response.status_code == 200
+    assert "merge_tmx" in response.get_json()["operations"]
+
+
+def test_auto_discover(client):
+    response = client.post("/api/okapi/auto-discover", json={})
+    assert response.status_code == 200
+    body = response.get_json()
+    assert "operations" in body
+    assert "python_operations" in body

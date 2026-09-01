@@ -45,6 +45,10 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
   const [okapiDockerImage, setOkapiDockerImage] = useState("okapiframework/okapi:latest")
   const [okapiTikalPath, setOkapiTikalPath] = useState("")
   const [okapiLonghornUrl, setOkapiLonghornUrl] = useState("")
+  const [okapiGithubRepo, setOkapiGithubRepo] = useState("")
+  const [okapiGithubWorkflow, setOkapiGithubWorkflow] = useState("okapi-ops.yml")
+  const [okapiGithubBranch, setOkapiGithubBranch] = useState("main")
+  const [okapiGithubToken, setOkapiGithubToken] = useState("")
   const [okapiApiKey, setOkapiApiKey] = useState("")
   const [okapiApiUrl, setOkapiApiUrl] = useState("")
   const [okapiWorkspaceId, setOkapiWorkspaceId] = useState("")
@@ -80,6 +84,10 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
           setOkapiDockerImage(data.okapi.docker_image || "okapiframework/okapi:latest")
           setOkapiTikalPath(data.okapi.tikal_path || "")
           setOkapiLonghornUrl(data.okapi.longhorn_url || "")
+          setOkapiGithubRepo(data.okapi.github_repo || "")
+          setOkapiGithubWorkflow(data.okapi.github_workflow || "okapi-ops.yml")
+          setOkapiGithubBranch(data.okapi.github_branch || "main")
+          setOkapiGithubToken(data.okapi.github_token || "")
           setOkapiApiKey(data.okapi.api_key || "")
           setOkapiApiUrl(data.okapi.api_url || "")
           setOkapiWorkspaceId(data.okapi.workspace_id || "")
@@ -112,6 +120,10 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
             docker_image: okapiDockerImage,
             tikal_path: okapiTikalPath,
             longhorn_url: okapiLonghornUrl,
+            github_repo: okapiGithubRepo,
+            github_workflow: okapiGithubWorkflow,
+            github_branch: okapiGithubBranch,
+            github_token: okapiGithubToken,
             api_key: okapiApiKey,
             api_url: okapiApiUrl,
             workspace_id: okapiWorkspaceId,
@@ -328,6 +340,45 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
                 value={okapiLonghornUrl}
                 onChange={(e) => setOkapiLonghornUrl(e.target.value)}
                 disabled={!okapiEnabled || okapiBackend !== "longhorn"}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="okapi-github-repo">GitHub repo (user fork)</Label>
+              <Input
+                id="okapi-github-repo"
+                placeholder="your-user/ldw-okapi-workflows"
+                value={okapiGithubRepo}
+                onChange={(e) => setOkapiGithubRepo(e.target.value)}
+                disabled={!okapiEnabled || okapiBackend !== "github"}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="okapi-github-token">GitHub token (PAT)</Label>
+              <Input
+                id="okapi-github-token"
+                type="password"
+                placeholder="ghp_..."
+                value={okapiGithubToken}
+                onChange={(e) => setOkapiGithubToken(e.target.value)}
+                disabled={!okapiEnabled || okapiBackend !== "github"}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="okapi-github-workflow">Workflow file</Label>
+              <Input
+                id="okapi-github-workflow"
+                value={okapiGithubWorkflow}
+                onChange={(e) => setOkapiGithubWorkflow(e.target.value)}
+                disabled={!okapiEnabled || okapiBackend !== "github"}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="okapi-github-branch">Branch</Label>
+              <Input
+                id="okapi-github-branch"
+                value={okapiGithubBranch}
+                onChange={(e) => setOkapiGithubBranch(e.target.value)}
+                disabled={!okapiEnabled || okapiBackend !== "github"}
               />
             </div>
             <div className="space-y-2">

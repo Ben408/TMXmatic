@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2 } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import { WorkspaceFile } from "./tmx-workspace"
+import { PipelineBuilder } from "./pipeline-builder"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 type OkapiOperation = {
   id: string
@@ -187,7 +189,14 @@ export function OkapiPanel({ files }: OkapiPanelProps) {
   const activeBackend = backends.find((b) => b.active)
 
   return (
-    <div className="space-y-4">
+    <Tabs defaultValue="operations" className="space-y-4">
+      <TabsList className="grid w-full grid-cols-3">
+        <TabsTrigger value="operations">Okapi ops</TabsTrigger>
+        <TabsTrigger value="pipelines">Pipelines</TabsTrigger>
+        <TabsTrigger value="builder">Builder</TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="operations" className="space-y-4">
       <Card>
         <CardHeader>
           <CardTitle>Okapi backends</CardTitle>
@@ -237,10 +246,13 @@ export function OkapiPanel({ files }: OkapiPanelProps) {
         </CardContent>
       </Card>
 
+      </TabsContent>
+
+      <TabsContent value="pipelines" className="space-y-4">
       <Card>
         <CardHeader>
           <CardTitle>Predefined pipelines</CardTitle>
-          <CardDescription>Hybrid workflows — Okapi extract first; Python steps expand in Phase 2.1.</CardDescription>
+          <CardDescription>Hybrid workflows — Okapi + Python steps from the spec templates.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {templates.map((tpl) => (
@@ -261,6 +273,11 @@ export function OkapiPanel({ files }: OkapiPanelProps) {
           ))}
         </CardContent>
       </Card>
-    </div>
+      </TabsContent>
+
+      <TabsContent value="builder">
+        <PipelineBuilder files={files} />
+      </TabsContent>
+    </Tabs>
   )
 }

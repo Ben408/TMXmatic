@@ -1,0 +1,32 @@
+{
+  "id": "tmx_cleanup_optimization",
+  "name": "TMX cleanup and optimization",
+  "description": "Python cleanup steps followed by Okapi TMX validation.",
+  "category": "tmx_cleanup",
+  "steps": [
+    {
+      "id": "remove-empty",
+      "type": "python",
+      "operation": "remove_empty",
+      "description": "Remove empty targets"
+    },
+    {
+      "id": "dedupe",
+      "type": "python",
+      "operation": "find_duplicates",
+      "description": "Remove duplicates"
+    },
+    {
+      "id": "clean-context",
+      "type": "python",
+      "operation": "remove_context_props",
+      "description": "Clean context properties"
+    },
+    {
+      "id": "okapi-qa",
+      "type": "okapi",
+      "operation": "qa",
+      "description": "Validate with Okapi"
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+# Same workflow ships in TMXmatic for users who fork the main OSS repo.
+name: okapi-ops
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "Okapi operation id (convert, merge, qa, terms)"
+        required: true
+        type: string
+      input_url:
+        description: "URL to download input file"
+        required: true
+        type: string
+      options_json:
+        description: "Operation options JSON"
+        required: false
+        type: string
+        default: "{}"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: okapi-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  run-okapi:
+    runs-on: ubuntu-latest
+    env:
+      OKAPI_VERSION: "1.47.0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Okapi tikal
+        run: |
+          curl -L -o okapi.zip "https://github.com/okapiframework/okapi/releases/download/v${OKAPI_VERSION}/okapi-apps-${OKAPI_VERSION}.zip"
+          unzip -q okapi.zip -d "$HOME/okapi"
+          echo "$HOME/okapi/okapi-apps-${OKAPI_VERSION}" >> "$GITHUB_PATH"
+
+      - name: Download input
+        run: curl -L "${{ github.event.inputs.input_url }}" -o input.bin
+
+      - name: Run operation
+        shell: bash
+        run: |
+          set -euo pipefail
+          OP="${{ github.event.inputs.operation }}"
+          case "$OP" in
+            convert) tikal.sh -x input.bin -o converted.xlf ;;
+            merge) tikal.sh -m input.bin -o merged-output ;;
+            qa) tikal.sh -x input.bin -o qa-report.html -seg -check ;;
+            terms) tikal.sh -x input.bin -o terms.tbx -tt terms.tbx ;;
+            *) echo "Unknown operation: $OP"; exit 2 ;;
+          esac
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: okapi-${{ github.event.inputs.operation }}-artifacts
+          path: |
+            converted.xlf
+            merged-output
+            qa-report.html
+            terms.tbx
+          if-no-files-found: ignore
+          retention-days: 7

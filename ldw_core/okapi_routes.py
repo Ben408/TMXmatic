@@ -15,6 +15,7 @@ from ldw_core.okapi.executor import OkapiExecutor
 from ldw_core.okapi.job_handlers import register_okapi_job_handlers
 from ldw_core.okapi.operation_registry import OkapiOperationRegistry
 from ldw_core.okapi.pipeline_manager import HybridPipelineManager
+from ldw_core.okapi.python_steps import PIPELINE_PYTHON_OPERATIONS
 from ldw_core.okapi.runners import build_runner, resolve_active_backend
 
 if TYPE_CHECKING:
@@ -198,6 +199,132 @@ def create_okapi_blueprint(app_path: str, jobs: JobManager) -> Blueprint:
                 "template_id": template_id,
                 "steps": steps,
                 "input_path": save_path,
+                "backend": backend,
+            },
+        )
+        return jsonify({"job": job, "poll_url": f"/api/jobs/{job['id']}"}), 202
+
+    @bp.route("/api/okapi/python-operations", methods=["GET"])
+    def okapi_python_operations():
+        """LDW-native operations available in hybrid pipelines."""
+        return jsonify({"operations": sorted(PIPELINE_PYTHON_OPERATIONS)})
+
+    @bp.route("/api/okapi/github/operations", methods=["GET", "POST"])
+    def okapi_github_operations():
+        """GitHub-backed operations (registry filtered by active GHA availability)."""
+        cfg = load_okapi_config(app_path)
+        payload = registry.list_for_api()
+        runner = build_runner("github", app_path, cfg)
+        health = runner.health_check()
+        for row in payload.get("operations", []):
+            row["available"] = health.available
+            if not health.available:
+                row["error_message"] = health.message
+        payload["deployment_type"] = "github"
+        payload["backend_available"] = health.available
+        return jsonify(payload)
+
+    @bp.route("/api/okapi/external/operations", methods=["POST"])
+    def okapi_external_operations():
+        """Discover operations from external Longhorn when URL provided."""
+        data = request.get_json(silent=True) or {}
+        longhorn_url = (data.get("longhorn_url") or load_okapi_config(app_path).get("longhorn_url") or "").strip()
+        if not longhorn_url:
+            return jsonify({"error": "longhorn_url required"}), 400
+        from ldw_core.okapi.longhorn_runner import LonghornRunner
+
+        runner = LonghornRunner(longhorn_url)
+        discovered = runner.discover_operations()
+        if discovered:
+            return jsonify({"operations": discovered, "deployment_type": "external", "longhorn_url": longhorn_url})
+        # Fall back to canonical registry when Longhorn has no discovery endpoint.
+        payload = registry.list_for_api()
+        payload["deployment_type"] = "external"
+        payload["longhorn_url"] = longhorn_url
+        return jsonify(payload)
+
+    @bp.route("/api/okapi/auto-discover", methods=["POST"])
+    def okapi_auto_discover():
+        """Merge registry operations with external Longhorn discovery when configured."""
+        data = request.get_json(silent=True) or {}
+        cfg = load_okapi_config(app_path)
+        longhorn_url = (data.get("longhorn_url") or cfg.get("longhorn_url") or "").strip()
+        payload = registry.list_for_api()
+        payload["python_operations"] = sorted(PIPELINE_PYTHON_OPERATIONS)
+        if longhorn_url:
+            from ldw_core.okapi.longhorn_runner import LonghornRunner
+
+            extra = LonghornRunner(longhorn_url).discover_operations()
+            if extra:
+                payload["longhorn_operations"] = extra
+        payload["active_backend"] = resolve_active_backend(app_path)
+        return jsonify(payload)
+
+    @bp.route("/api/okapi/operation/<operation_id>", methods=["GET"])
+    def okapi_operation_detail(operation_id: str):
+        op = registry.get(operation_id)
+        if not op:
+            return jsonify({"error": "operation not found"}), 404
+        return jsonify({"operation": op.to_dict()})
+
+    @bp.route("/api/pipeline-templates", methods=["POST"])
+    def pipeline_templates_save():
+        """Save a user pipeline template."""
+        data = request.get_json(silent=True) or {}
+        try:
+            saved = pipelines.save_template(data)
+            return jsonify({"template": saved}), 201
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @bp.route("/api/pipeline-templates/<template_id>", methods=["DELETE"])
+    def pipeline_templates_delete(template_id: str):
+        if pipelines.delete_template(template_id):
+            return jsonify({"deleted": template_id})
+        return jsonify({"error": "template not found or builtin"}), 404
+
+    @bp.route("/api/execute-pipeline", methods=["POST"])
+    def execute_pipeline():
+        """JSON or multipart pipeline execution (spec alias for ``/api/pipelines/execute``)."""
+        import json
+
+        if request.is_json:
+            data = request.get_json(silent=True) or {}
+            template_id = data.get("template_id")
+            steps = data.get("steps") or []
+            backend = data.get("backend")
+            input_path = data.get("input_path")
+            if not input_path or not os.path.isfile(input_path):
+                return jsonify({"error": "input_path must exist on LDW host"}), 400
+        else:
+            if "file" not in request.files:
+                return jsonify({"error": "file is required"}), 400
+            template_id = (request.form.get("template_id") or "").strip() or None
+            steps_raw = request.form.get("steps_json") or "[]"
+            backend = (request.form.get("backend") or "").strip() or None
+            try:
+                steps = json.loads(steps_raw)
+            except json.JSONDecodeError as exc:
+                return jsonify({"error": f"invalid steps_json: {exc}"}), 400
+            file = request.files["file"]
+            filename = secure_filename(file.filename or "input.bin")
+            input_path = os.path.join(uploads_dir, filename)
+            file.save(input_path)
+
+        if template_id and not steps:
+            template = pipelines.get_template(template_id)
+            if not template:
+                return jsonify({"error": f"unknown template: {template_id}"}), 404
+            steps = template.get("steps", [])
+        if not steps:
+            return jsonify({"error": "template_id or steps required"}), 400
+
+        job = jobs.create_job(
+            "pipeline",
+            {
+                "template_id": template_id,
+                "steps": steps,
+                "input_path": input_path,
                 "backend": backend,
             },
         )
