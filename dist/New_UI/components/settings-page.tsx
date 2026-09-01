@@ -40,7 +40,11 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
   const [isMounted, setIsMounted] = useState(false)
   const [okapiEnabled, setOkapiEnabled] = useState(false)
   
-  // Okapi settings
+  // Okapi settings — backend + hosted workspace (Phase 2)
+  const [okapiBackend, setOkapiBackend] = useState("docker")
+  const [okapiDockerImage, setOkapiDockerImage] = useState("okapiframework/okapi:latest")
+  const [okapiTikalPath, setOkapiTikalPath] = useState("")
+  const [okapiLonghornUrl, setOkapiLonghornUrl] = useState("")
   const [okapiApiKey, setOkapiApiKey] = useState("")
   const [okapiApiUrl, setOkapiApiUrl] = useState("")
   const [okapiWorkspaceId, setOkapiWorkspaceId] = useState("")
@@ -72,6 +76,10 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
         // Set Okapi settings
         if (data.okapi) {
           setOkapiEnabled(data.okapi.enabled || false)
+          setOkapiBackend(data.okapi.backend || "docker")
+          setOkapiDockerImage(data.okapi.docker_image || "okapiframework/okapi:latest")
+          setOkapiTikalPath(data.okapi.tikal_path || "")
+          setOkapiLonghornUrl(data.okapi.longhorn_url || "")
           setOkapiApiKey(data.okapi.api_key || "")
           setOkapiApiUrl(data.okapi.api_url || "")
           setOkapiWorkspaceId(data.okapi.workspace_id || "")
@@ -100,6 +108,10 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
         body: JSON.stringify({
           okapi: {
             enabled: okapiEnabled,
+            backend: okapiBackend,
+            docker_image: okapiDockerImage,
+            tikal_path: okapiTikalPath,
+            longhorn_url: okapiLonghornUrl,
             api_key: okapiApiKey,
             api_url: okapiApiUrl,
             workspace_id: okapiWorkspaceId,
@@ -257,7 +269,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
               <div>
                 <CardTitle>Okapi Integration</CardTitle>
                 <CardDescription>
-                  Configure your Okapi API connection settings
+                  Processing backend (Docker tikal, local tikal, GHA, Longhorn) and hosted workspace API
                 </CardDescription>
               </div>
               <Switch
@@ -269,35 +281,85 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="okapi-api-key">API Key</Label>
+              <Label htmlFor="okapi-backend">Processing backend</Label>
+              <Select
+                value={okapiBackend}
+                onValueChange={setOkapiBackend}
+                disabled={!okapiEnabled}
+              >
+                <SelectTrigger id="okapi-backend">
+                  <SelectValue placeholder="Select backend" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="docker">Docker tikal (pilot default)</SelectItem>
+                  <SelectItem value="local_tikal">Local tikal (JRE + Okapi installed)</SelectItem>
+                  <SelectItem value="github">GitHub Actions (user fork)</SelectItem>
+                  <SelectItem value="longhorn">External Longhorn API</SelectItem>
+                  <SelectItem value="hosted">Hosted Okapi workspace</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="okapi-docker-image">Docker image</Label>
+              <Input
+                id="okapi-docker-image"
+                placeholder="okapiframework/okapi:latest"
+                value={okapiDockerImage}
+                onChange={(e) => setOkapiDockerImage(e.target.value)}
+                disabled={!okapiEnabled || okapiBackend !== "docker"}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="okapi-tikal-path">Local tikal path</Label>
+              <Input
+                id="okapi-tikal-path"
+                placeholder="C:\\Okapi\\tikal.bat"
+                value={okapiTikalPath}
+                onChange={(e) => setOkapiTikalPath(e.target.value)}
+                disabled={!okapiEnabled || okapiBackend !== "local_tikal"}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="okapi-longhorn-url">Longhorn URL</Label>
+              <Input
+                id="okapi-longhorn-url"
+                type="url"
+                placeholder="https://longhorn.example.com"
+                value={okapiLonghornUrl}
+                onChange={(e) => setOkapiLonghornUrl(e.target.value)}
+                disabled={!okapiEnabled || okapiBackend !== "longhorn"}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="okapi-api-key">Hosted API Key</Label>
               <Input
                 id="okapi-api-key"
                 type="password"
                 placeholder="Enter your Okapi API key"
                 value={okapiApiKey}
                 onChange={(e) => setOkapiApiKey(e.target.value)}
-                disabled={!okapiEnabled}
+                disabled={!okapiEnabled || okapiBackend !== "hosted"}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="okapi-api-url">API URL</Label>
+              <Label htmlFor="okapi-api-url">Hosted API URL</Label>
               <Input
                 id="okapi-api-url"
                 type="url"
                 placeholder="https://api.okapi.com"
                 value={okapiApiUrl}
                 onChange={(e) => setOkapiApiUrl(e.target.value)}
-                disabled={!okapiEnabled}
+                disabled={!okapiEnabled || okapiBackend !== "hosted"}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="okapi-workspace-id">Workspace ID</Label>
+              <Label htmlFor="okapi-workspace-id">Hosted Workspace ID</Label>
               <Input
                 id="okapi-workspace-id"
                 placeholder="Enter your workspace ID"
                 value={okapiWorkspaceId}
                 onChange={(e) => setOkapiWorkspaceId(e.target.value)}
-                disabled={!okapiEnabled}
+                disabled={!okapiEnabled || okapiBackend !== "hosted"}
               />
             </div>
             <Button

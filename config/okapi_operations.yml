@@ -1,0 +1,55 @@
+# Canonical Okapi operation registry — shared by API, UI, and job orchestration.
+# Spec: LDW-Planning/backlog/OKAPI_INTEGRATION_PLAN_rev.md
+schema_version: 1
+okapi_compat:
+  min: "1.42.0"
+  max: "1.x"
+
+operations:
+  - id: convert
+    label: "Convert to XLIFF"
+    description: "Extract translatable content to XLIFF using Okapi tikal (-x)."
+    component: tikal
+    complexity: medium
+    tikal_mode: extract
+    inputs:
+      formats: [docx, doc, xlsx, xls, pptx, ppt, html, htm, xml, json, idml, po, properties, srt, vtt, tmx, xliff, xlf, csv, tsv, txt, md, yaml, yml, zip]
+    outputs:
+      primary: converted.xlf
+      mime: application/xliff+xml
+
+  - id: merge
+    label: "Merge XLIFF to target format"
+    description: "Merge translated XLIFF back to the original package format using tikal (-m)."
+    component: tikal
+    complexity: medium
+    tikal_mode: merge
+    inputs:
+      formats: [xlf, xliff]
+    outputs:
+      primary: merged-output
+      mime: application/octet-stream
+
+  - id: qa
+    label: "Quality check"
+    description: "Run Okapi quality pipeline and emit an HTML report."
+    component: checker
+    complexity: low
+    tikal_mode: qa
+    inputs:
+      formats: [tmx, xliff, xlf, sdlxliff, docx, xlsx]
+    outputs:
+      primary: qa-report.html
+      mime: text/html
+
+  - id: terms
+    label: "Extract terminology"
+    description: "Extract candidate terms to TBX/CSV using Okapi terminology steps."
+    component: terms
+    complexity: high
+    tikal_mode: terms
+    inputs:
+      formats: [tmx, tbx, tlf, csv, tsv, xlsx, xliff, xlf]
+    outputs:
+      primary: terms.tbx
+      mime: application/xml

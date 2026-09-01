@@ -32,6 +32,12 @@ class IntegrationSettings:
         return {
             'okapi': {
                 'enabled': False,
+                'backend': 'docker',
+                'docker_image': 'okapiframework/okapi:latest',
+                'tikal_path': '',
+                'github_repo': '',
+                'github_workflow': 'okapi-processing.yml',
+                'longhorn_url': '',
                 'api_key': '',
                 'api_url': '',
                 'workspace_id': ''
@@ -61,7 +67,7 @@ class IntegrationSettings:
                     logger.error(f"Error loading public settings: {e}")
 
             # Load sensitive settings if present (only merge sensitive keys so we don't overwrite 'enabled')
-            _okapi_sensitive = {'api_key', 'api_url', 'workspace_id'}
+            _okapi_sensitive = {'api_key', 'api_url', 'workspace_id', 'github_repo'}
             if os.path.exists(SECRETS_FILE):
                 try:
                     with open(SECRETS_FILE, 'r', encoding='utf-8') as f:
@@ -94,7 +100,7 @@ class IntegrationSettings:
                 os.makedirs(settings_dir, exist_ok=True)
 
             # Define which keys are considered sensitive (only these go in secrets file)
-            okapi_sensitive = {'api_key', 'api_url', 'workspace_id'}
+            okapi_sensitive = {'api_key', 'api_url', 'workspace_id', 'github_repo'}
 
             public_settings = IntegrationSettings._default_settings()
             # Secrets file: only sensitive keys, so merging later won't overwrite 'enabled' etc.

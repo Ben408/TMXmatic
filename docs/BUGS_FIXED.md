@@ -2,8 +2,10 @@
 
 | Date | Area | Fix |
 |---|---|---|
-| 2026-08-31 | `app.py` | **`get_application_path` was undefined** in `/api/check-feature` and `/api/install-feature` — now imported from `ldw_core.paths` (shared with launcher). |
-| 2026-08-31 | Core API | Added **`GET /health`**, **`GET /api/modules`**, and **local job API v1** so Hermes can wake/probe LDW without importing Hermes into core. |
+| 2026-08-31 | `app.py` | **`get_application_path` was undefined** in `/api/check-feature` and `/api/install-feature` — now imported from `ldw_core.paths`. |
+| 2026-08-31 | Core API | Added **`GET /health`**, **`GET /api/modules`**, and **local job API v1**. |
+| 2026-08-31 | Okapi Phase 2 | **`HostedWorkspaceRunner`** health probe no longer fails entire `/api/okapi/backends/status` when optional deps misconfigured — per-backend try/except. |
+| 2026-08-31 | Okapi Phase 2 | Fixed **`ALL_BACKENDS` NameError** in `resolve_active_backend()`. |
 
 ---
 

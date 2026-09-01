@@ -3,27 +3,32 @@
 from __future__ import annotations
 
 import os
-import tempfile
+import shutil
 
 import pytest
 from flask import Flask
 
-from ldw_core.api_routes import create_ldw_api_blueprint
+from ldw_core.api_routes import register_ldw_api
 
 
 @pytest.fixture()
 def app_path(tmp_path):
     """Isolated LDW home directory for each test."""
-    return str(tmp_path)
+    root = str(tmp_path)
+    # Ship Okapi registry + one pipeline template into the temp app root.
+    repo_root = os.path.dirname(os.path.dirname(__file__))
+    config_src = os.path.join(repo_root, "config")
+    if os.path.isdir(config_src):
+        shutil.copytree(config_src, os.path.join(root, "config"))
+    return root
 
 
 @pytest.fixture()
 def flask_app(app_path):
-    """Minimal Flask app with only Phase 1 LDW routes (fast unit/integration tests)."""
+    """Flask app with Phase 1 + Okapi Phase 2 routes."""
     app = Flask(__name__)
     app.config["TESTING"] = True
-    blueprint = create_ldw_api_blueprint(app_path)
-    app.register_blueprint(blueprint)
+    register_ldw_api(app, app_path)
     return app
 
 

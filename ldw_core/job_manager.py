@@ -210,3 +210,13 @@ _HANDLERS: dict[str, Handler] = {
     "echo": _handle_echo,
     "sleep": _handle_sleep,
 }
+
+
+def register_job_handler(job_type: str, handler: Handler) -> None:
+    """Allow modules / Okapi Phase 2 to add job types without editing this file."""
+    _HANDLERS[job_type] = handler
+
+
+def supported_job_types() -> set[str]:
+    """Expose registered job types for API validation."""
+    return set(_HANDLERS.keys())

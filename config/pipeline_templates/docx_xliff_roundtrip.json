@@ -1,0 +1,17 @@
+{
+  "id": "docx_xliff_roundtrip",
+  "name": "DOCX → XLIFF (Okapi extract)",
+  "description": "Convert Office/document formats to XLIFF for LDW segment operations.",
+  "category": "format_conversion",
+  "steps": [
+    {
+      "id": "okapi-extract",
+      "type": "okapi",
+      "operation": "convert",
+      "description": "Extract translatable content to XLIFF"
+    }
+  ],
+  "input_requirements": {
+    "formats": ["docx", "doc", "xlsx", "pptx", "html", "idml"]
+  }
+}

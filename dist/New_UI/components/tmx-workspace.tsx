@@ -5,6 +5,7 @@ import { format } from "date-fns"
 import { FileUploader } from "./file-uploader"
 import { WorkspaceFiles } from "./workspace-files"
 import { OperationsPanel } from "./operations-panel"
+import { OkapiPanel } from "./okapi-panel"
 import { ProcessingHistory } from "./processing-history"
 import { Button } from "@/components/ui/button"
 import { Download, AlertCircle, Upload } from "lucide-react"
@@ -948,6 +949,10 @@ export function TMXWorkspace() {
             batchMtSelectedSteps={batchMtSelectedSteps}
             onBatchMtSelectedStepsChange={setBatchMtSelectedSteps}
           />
+        )}
+
+        {selectedFiles.length > 0 && (
+          <OkapiPanel files={selectedFiles} />
         )}
       </div>
 

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from flask import Blueprint, jsonify, request, send_file
 
-from ldw_core.job_manager import JobManager
+from ldw_core.job_manager import JobManager, supported_job_types
 from ldw_core.module_registry import ModuleRegistry
 from ldw_core.pipeline_registry import list_pipeline_steps
 from ldw_core.version import LDW_CORE_VERSION
@@ -16,8 +16,8 @@ from ldw_core.version import LDW_CORE_VERSION
 if TYPE_CHECKING:
     from flask import Flask
 
-# Allowed v1 job types — extend when Okapi + modules register handlers.
-_SUPPORTED_JOB_TYPES = {"noop", "echo", "sleep"}
+# Phase 1 built-in job types always available before Okapi handlers register.
+_CORE_JOB_TYPES = {"noop", "echo", "sleep"}
 
 
 def create_ldw_api_blueprint(app_path: str) -> Blueprint:
@@ -61,11 +61,12 @@ def create_ldw_api_blueprint(app_path: str) -> Blueprint:
         job_type = (data.get("type") or "").strip()
         if not job_type:
             return jsonify({"error": "type is required"}), 400
-        if job_type not in _SUPPORTED_JOB_TYPES:
+        allowed = _CORE_JOB_TYPES | supported_job_types()
+        if job_type not in allowed:
             return jsonify(
                 {
                     "error": f"unsupported job type: {job_type}",
-                    "supported_types": sorted(_SUPPORTED_JOB_TYPES),
+                    "supported_types": sorted(allowed),
                 }
             ), 400
         params = data.get("params")
@@ -115,4 +116,9 @@ def create_ldw_api_blueprint(app_path: str) -> Blueprint:
 
 def register_ldw_api(app: Flask, app_path: str) -> None:
     """Register Phase 1 routes on the main LDW Flask app."""
-    app.register_blueprint(create_ldw_api_blueprint(app_path))
+    blueprint = create_ldw_api_blueprint(app_path)
+    app.register_blueprint(blueprint)
+    # Phase 2 Okapi routes share the same JobManager instance.
+    from ldw_core.okapi_routes import register_okapi_api
+
+    register_okapi_api(app, app_path, blueprint.ldw_jobs)  # type: ignore[attr-defined]
