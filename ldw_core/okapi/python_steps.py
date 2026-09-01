@@ -28,6 +28,7 @@ PIPELINE_PYTHON_OPERATIONS: frozenset[str] = frozenset(
         "process_tbx",
         "find_date_duplicates",
         "remove_context_props",
+        "retag_tmx",
     }
 )
 

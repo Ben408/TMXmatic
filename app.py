@@ -92,6 +92,13 @@ try:
     
     # XLIFF operations
     from scripts.xliff_operations import leverage_tmx_into_xliff, check_empty_targets
+    from scripts.lang_retag import (
+        inspect_tmx_languages,
+        inspect_xliff_languages,
+        retag_tmx_operation,
+        retag_tmx_languages,
+        retag_xliff_languages,
+    )
     from scripts.xliff_to_tmx import xliff_to_tmx
     from scripts.tmx_to_xliff import tmx_to_xliff
     
@@ -460,6 +467,9 @@ OPERATIONS = {
 
     # TBX operations
     'process_tbx': handle_tmx_operation(process_tbx),
+
+    # Language retag (TMS migration) — TMX via queue; XLIFF via /api/xliff_retag_languages
+    'retag_tmx': handle_tmx_operation(retag_tmx_operation),
 }
 
 @app.route('/api/check-feature', methods=['GET'])
@@ -754,6 +764,15 @@ def process_file(operation: str, filepath: str, **kwargs) -> str:
                 result = OPERATIONS[operation](filepath, cutoff_date=cutoff_date, selected_steps=batch_mt_steps)
             else:
                 result = OPERATIONS[operation](filepath, selected_steps=batch_mt_steps)
+        elif operation == 'retag_tmx':
+            result = OPERATIONS[operation](
+                filepath,
+                source_find=kwargs.get('source_find'),
+                source_replace=kwargs.get('source_replace'),
+                target_find=kwargs.get('target_find'),
+                target_replace=kwargs.get('target_replace'),
+                tuv_mappings_json=kwargs.get('tuv_mappings_json'),
+            )
         else:
             result = OPERATIONS[operation](filepath)
         
@@ -832,6 +851,118 @@ def xliff_tmx_leverage():
                     
     except Exception as e:
         logger.error(f"Error in xliff_tmx_leverage: {e}")
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/xliff_retag_languages', methods=['POST'])
+def xliff_retag_languages_api():
+    """Retag XLIFF file-level source/target language declarations only."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'XLIFF file is required'}), 400
+        upload = request.files['file']
+        if not upload.filename:
+            return jsonify({'error': 'Empty filename'}), 400
+        source_lang = (request.form.get('source_lang') or '').strip() or None
+        target_lang = (request.form.get('target_lang') or '').strip() or None
+        if not source_lang and not target_lang:
+            return jsonify({'error': 'source_lang and/or target_lang required'}), 400
+
+        save_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(upload.filename))
+        upload.save(save_path)
+        try:
+            result = retag_xliff_languages(
+                save_path,
+                source_lang=source_lang,
+                target_lang=target_lang,
+            )
+            response = make_response(send_file(
+                result.output_path,
+                as_attachment=True,
+                download_name=os.path.basename(result.output_path),
+                mimetype='application/x-xliff+xml',
+            ))
+            response.headers['X-Retag-Stats'] = json.dumps(result.to_dict())
+            return response
+        finally:
+            if os.path.isfile(save_path):
+                os.remove(save_path)
+    except Exception as e:
+        logger.error(f"Error in xliff_retag_languages: {e}")
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/tmx_retag_languages', methods=['POST'])
+def tmx_retag_languages_api():
+    """Retag TMX header and positional tuv xml:lang attributes."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'TMX file is required'}), 400
+        upload = request.files['file']
+        if not upload.filename:
+            return jsonify({'error': 'Empty filename'}), 400
+
+        source_find = (request.form.get('source_find') or '').strip() or None
+        source_replace = (request.form.get('source_replace') or '').strip() or None
+        target_find = (request.form.get('target_find') or '').strip() or None
+        target_replace = (request.form.get('target_replace') or '').strip() or None
+        mappings_raw = (request.form.get('tuv_mappings_json') or '').strip()
+        tuv_mappings = json.loads(mappings_raw) if mappings_raw else None
+
+        save_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(upload.filename))
+        upload.save(save_path)
+        try:
+            result = retag_tmx_languages(
+                save_path,
+                source_find=source_find,
+                source_replace=source_replace,
+                target_find=target_find,
+                target_replace=target_replace,
+                tuv_mappings=tuv_mappings,
+            )
+            response = make_response(send_file(
+                result.output_path,
+                as_attachment=True,
+                download_name=os.path.basename(result.output_path),
+                mimetype='application/xml',
+            ))
+            response.headers['X-Retag-Stats'] = json.dumps(result.to_dict())
+            return response
+        finally:
+            if os.path.isfile(save_path):
+                os.remove(save_path)
+    except Exception as e:
+        logger.error(f"Error in tmx_retag_languages: {e}")
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/inspect_languages', methods=['POST'])
+def inspect_languages_api():
+    """Inspect declared languages in XLIFF or TMX without modifying the file."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'file is required'}), 400
+        upload = request.files['file']
+        if not upload.filename:
+            return jsonify({'error': 'Empty filename'}), 400
+        save_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(upload.filename))
+        upload.save(save_path)
+        try:
+            ext = os.path.splitext(upload.filename)[1].lower()
+            if ext in ('.xlf', '.xliff'):
+                info = inspect_xliff_languages(save_path)
+                info['format'] = 'xliff'
+            elif ext == '.tmx':
+                info = inspect_tmx_languages(save_path)
+                info['format'] = 'tmx'
+            else:
+                return jsonify({'error': 'Unsupported format — use .xlf/.xliff or .tmx'}), 400
+            return jsonify(info)
+        finally:
+            if os.path.isfile(save_path):
+                os.remove(save_path)
+    except Exception as e:
+        logger.error(f"Error in inspect_languages: {e}")
         return jsonify({'error': str(e)}), 400
 
 @app.route('/api/xliff_check', methods=['POST'])

@@ -16,6 +16,7 @@
 | 2026-09-01 | GHA pilot | Private fork inbox 404 on raw URL — workflow downloads via Contents API + `github.token`; preserve input filename for tikal. |
 | 2026-09-01 | GHA merge | Merge leg needs companion DOCX — `options_json.companion_url` in workflow; `okapi_smoke.py --roundtrip`. |
 | 2026-09-01 | Okapi lang pair | Convert/merge without `-sl`/`-tl` — `tikal_options.py` defaults `en-us`/`fr-fr`; workflow passes lang flags. |
+| 2026-09-01 | Lang retag | Standalone `scripts/lang_retag.py` — XLIFF file-level attrs only; TMX header + positional `tuv` find/replace (no regex in `seg`/`prop`). |
 
 ---
 
