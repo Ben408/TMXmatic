@@ -1,6 +1,8 @@
 # Language Data Workbench (TMXmatic) - processing tool for TMX, TBX, XLIFF and Excel files.
 
-Web-based tooling for processing **TMX** (Translation Memory eXchange), **XLIFF**, and related files, with a focus on cleaning and managing translation memory and language data. The desktop-style flow uses a **Flask** backend and a **Next.js** UI shipped under `dist/New_UI`.
+Web-based tooling for processing **TMX** (Translation Memory eXchange), **XLIFF**, **DOCX**, and related files, with a focus on cleaning and managing translation memory and language data. The desktop-style flow uses a **Flask** backend and a **Next.js** UI shipped under `dist/New_UI`.
+
+**Phase 2** adds **[Okapi Framework](https://okapiframework.org/)** integration: registry-driven convert/merge/QA operations, hybrid Python + Okapi pipelines, and a pipeline builder in the workbench UI.
 
 <img width="1244" height="1080" alt="image" src="https://github.com/user-attachments/assets/4f638ba2-20d0-4c4a-ad77-462af9bdc415" />
 
@@ -22,28 +24,106 @@ The batch script will, in order:
 
 - A command window will appear, when the Next.js server is up a web-browser tab will open with the UI.
 
-- Drag in assets to provess or use the file picker.
+- Drag in assets to process or use the file picker.
 
 - Select operations to run individually or select multiple operations to run as a batch.
+
+For **Okapi** pipelines (e.g. DOCX → XLIFF), complete the [Okapi setup](#okapi-integration-phase-2) below before using the **Pipelines** tab.
 
 Session logs are written next to the app, named like **`tmxmatic_YYYYMMDD_HHMMSS.log`**.
 
 ### UI notes
 
 - **Settings** (gear in the workbench) includes integration options and **Appearance**: **Light**, **Dark**, or **System** theme (persisted via the UI theme provider).
+- **Okapi / Pipelines** — upload a supported file (e.g. `.docx`), select it in the workspace, then open the **Pipelines** tab to run Okapi operations or saved pipeline templates.
 
 ## Prerequisites
 
+- **Windows 10/11** (recommended entry point: `start_tmxmatic.bat`).
 - **Python** 3.10 or newer (3.8+ may work; the Windows batch script targets current Python via winget when needed).
 - **Node.js** 18+ recommended (**20 LTS** matches typical Next.js 15 / React 19 setups); **`npm`** must be on `PATH` for the batch file’s UI install step.
 - **pip** (comes with Python).
+- **Docker Desktop** (recommended for Okapi) — required for the default **Docker tikal** backend. No host Java install needed; Okapi runs inside a local container image you build once.
 
-## Manual installation (any OS)
+## Okapi integration (Phase 2)
+
+LDW can run Okapi **tikal** operations and multi-step pipelines without installing Java or Rainbow on the host. Operations are defined in `config/okapi_operations.yml` and exposed via the Flask API and the **Pipelines** UI tab.
+
+### Backend options
+
+Configure under **Settings → Integrations → Okapi** (stored in `integration_settings.json`).
+
+| Backend | When to use | What you need |
+|--------|-------------|----------------|
+| **Docker tikal** (default) | Local pilot and day-to-day use on Windows | [Docker Desktop](https://www.docker.com/products/docker-desktop/) + one-time image build (below) |
+| **GitHub Actions** | No local Docker; offload runs to your fork | Fork [ldw-okapi-workflows](https://github.com/Ben408/ldw-okapi-workflows), GitHub PAT, repo name `user/ldw-okapi-workflows` |
+| **Hosted Okapi** | Existing Okapi workspace API | API key, URL, workspace ID |
+| **Longhorn** | Custom external Okapi API | `longhorn_url` (stock Longhorn is not a drop-in for LDW pipelines) |
+| **Local tikal** | Dev-only; not recommended | Path to `tikal.bat` on the host (JRE drift risk) |
+
+### Docker tikal setup (recommended)
+
+The image is **not** published to Docker Hub. After cloning the repo, build it once on your machine:
+
+```powershell
+cd <repo-root>
+.\scripts\build_okapi_tikal_image.ps1
+```
+
+The script downloads the official Okapi **1.48.0** Linux distribution (~40 MB), builds `ldw-okapi-tikal:1.48` from `docker/okapi-tikal/Dockerfile` (Eclipse Temurin 17 JRE inside the container), and runs `tikal -info` as a smoke check.
+
+Verify Docker + convert:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\okapi_smoke.py docker
+```
+
+Expected: `tikal ready (ldw-okapi-tikal:1.48)` and a successful `convert` smoke test.
+
+In **Settings**, confirm:
+
+- **Backend:** Docker tikal  
+- **Docker image:** `ldw-okapi-tikal:1.48`
+
+Backend health is also available at `GET http://127.0.0.1:5000/api/okapi/backends/status` while Flask is running.
+
+### GitHub Actions backend (optional)
+
+1. Fork [ldw-okapi-workflows](https://github.com/Ben408/ldw-okapi-workflows) (workflow: `okapi-ops.yml`).
+2. In LDW **Settings**, set **Backend** to **GitHub Actions**, your **GitHub repo** (`owner/ldw-okapi-workflows`), and a PAT with `workflow` scope (store in `integration_secrets.json` as `github_token` or use env `OKAPI_GITHUB_TOKEN`).
+3. Smoke test (optional):
+
+   ```powershell
+   .\.venv\Scripts\python.exe scripts\okapi_smoke.py github
+   ```
+
+### Using Okapi in the UI
+
+1. Start LDW (`start_tmxmatic.bat` or manual Flask + Next dev server).
+2. Upload a file Okapi supports (e.g. `.docx`, `.xlf`, Office formats).
+3. Select the file in the workspace (single-file workspaces auto-select).
+4. Open **Pipelines** → choose an operation or template → run.
+5. Download artifacts when the job completes.
+
+Supported upload types are centralized in `dist/New_UI/lib/workspace-upload-formats.ts` (TMX, DOCX, XLIFF, and other Okapi-friendly formats).
+
+### Troubleshooting
+
+| Symptom | Fix |
+|--------|-----|
+| `image ldw-okapi-tikal:1.48 not found` | Run `.\scripts\build_okapi_tikal_image.ps1` |
+| `docker daemon not running` | Start Docker Desktop |
+| Okapi panel empty / API 404 from UI port | Ensure Flask is on `:5000`; Next.js rewrites `/api/*` to Flask (see `dist/New_UI/next.config.js`) |
+| GitHub backend unavailable | Set `github_token` + `github_repo` in secrets or env vars |
+
+More detail: `docs/DEVELOPMENT_STATUS.md`, `docs/BUGS_FIXED.md`.
+
+## Manual installation (Windows)
 
 1. Clone the repository and enter the project directory.
 
-   ```bash
-   git clone <repository-url>
+   ```powershell
+   git clone https://github.com/Ben408/TMXmatic.git
    cd TMXmatic
    ```
 
@@ -83,9 +163,10 @@ Session logs are written next to the app, named like **`tmxmatic_YYYYMMDD_HHMMSS
 - **Analysis**: creation/last-change dates, exports, batch pipelines (`batch_process_1_5`, `batch_process_1_5_9`, etc.).
 - **Merge / split / conversions**: merge TMX, split by language or size, VATV / TermWeb style conversions where implemented.
 
-### XLIFF
+### XLIFF and Okapi
 
 - Leverage TMX into XLIFF and check completion / empty targets (see `scripts/` and API operation names in `app.py`).
+- **Okapi**: DOCX/Office → XLIFF extraction, merge, QA, terminology, and user-defined hybrid pipelines (see [Okapi integration](#okapi-integration-phase-2)).
 
 ## Development
 
@@ -98,11 +179,16 @@ TMXmatic/
 ├── dependency_manager.py # Node install from dist/New_UI/package.json (also run by the .bat)
 ├── start_tmxmatic.bat     # Recommended Windows entry point
 ├── config.py
+├── config/
+│   └── okapi_operations.yml  # Okapi operation registry
+├── docker/
+│   └── okapi-tikal/       # Dockerfile + build context for ldw-okapi-tikal image
+├── ldw_core/okapi/        # Runners, executor, pipeline integration
 ├── other/
 │   └── requirements.txt   # Python dependencies for local / venv install
 ├── dist/
 │   └── New_UI/            # Next.js app (package.json, components, app/)
-├── scripts/               # TMX/XLIFF/TBX processing modules
+├── scripts/               # TMX/XLIFF/TBX processing + okapi_smoke.py, build_okapi_tikal_image.ps1
 └── app.spec               # PyInstaller spec (if you build an executable)
 ```
 

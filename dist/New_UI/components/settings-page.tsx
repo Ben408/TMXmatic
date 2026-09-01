@@ -42,7 +42,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
   
   // Okapi settings — backend + hosted workspace (Phase 2)
   const [okapiBackend, setOkapiBackend] = useState("docker")
-  const [okapiDockerImage, setOkapiDockerImage] = useState("okapiframework/okapi:latest")
+  const [okapiDockerImage, setOkapiDockerImage] = useState("ldw-okapi-tikal:1.48")
   const [okapiTikalPath, setOkapiTikalPath] = useState("")
   const [okapiLonghornUrl, setOkapiLonghornUrl] = useState("")
   const [okapiGithubRepo, setOkapiGithubRepo] = useState("")
@@ -81,7 +81,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
         if (data.okapi) {
           setOkapiEnabled(data.okapi.enabled || false)
           setOkapiBackend(data.okapi.backend || "docker")
-          setOkapiDockerImage(data.okapi.docker_image || "okapiframework/okapi:latest")
+          setOkapiDockerImage(data.okapi.docker_image || "ldw-okapi-tikal:1.48")
           setOkapiTikalPath(data.okapi.tikal_path || "")
           setOkapiLonghornUrl(data.okapi.longhorn_url || "")
           setOkapiGithubRepo(data.okapi.github_repo || "")
@@ -303,11 +303,11 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
                   <SelectValue placeholder="Select backend" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="docker">Docker tikal (pilot default)</SelectItem>
-                  <SelectItem value="local_tikal">Local tikal (JRE + Okapi installed)</SelectItem>
-                  <SelectItem value="github">GitHub Actions (user fork)</SelectItem>
+                  <SelectItem value="docker">Docker tikal (pilot default — JRE in container)</SelectItem>
+                  <SelectItem value="github">GitHub Actions (user fork — JRE on runner)</SelectItem>
                   <SelectItem value="longhorn">External Longhorn API</SelectItem>
                   <SelectItem value="hosted">Hosted Okapi workspace</SelectItem>
+                  <SelectItem value="local_tikal">Local tikal (not recommended — host JRE)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -315,11 +315,14 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
               <Label htmlFor="okapi-docker-image">Docker image</Label>
               <Input
                 id="okapi-docker-image"
-                placeholder="okapiframework/okapi:latest"
+                placeholder="ldw-okapi-tikal:1.48"
                 value={okapiDockerImage}
                 onChange={(e) => setOkapiDockerImage(e.target.value)}
                 disabled={!okapiEnabled || okapiBackend !== "docker"}
               />
+              <p className="text-xs text-muted-foreground">
+                Build locally: <code className="text-xs">scripts\build_okapi_tikal_image.ps1</code>
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="okapi-tikal-path">Local tikal path</Label>

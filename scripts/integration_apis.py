@@ -33,7 +33,7 @@ class IntegrationSettings:
             'okapi': {
                 'enabled': False,
                 'backend': 'docker',
-                'docker_image': 'okapiframework/okapi:latest',
+                'docker_image': 'ldw-okapi-tikal:1.48',
                 'tikal_path': '',
                 'github_repo': '',
                 'github_workflow': 'okapi-ops.yml',

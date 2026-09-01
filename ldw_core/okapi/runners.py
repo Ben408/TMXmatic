@@ -16,6 +16,7 @@ from ldw_core.okapi.config import (
     BACKEND_HOSTED,
     BACKEND_LOCAL_TIKAL,
     BACKEND_LONGHORN,
+    DEFAULT_OKAPI_DOCKER_IMAGE,
     load_okapi_config,
 )
 from ldw_core.okapi.operation_registry import OkapiOperation
@@ -60,18 +61,53 @@ class OkapiRunner(ABC):
         """Execute one registry operation and write artifacts under ``work_dir``."""
 
 
-def _build_tikal_args(operation: OkapiOperation, input_name: str, output_name: str) -> list[str]:
-    """Map registry ``tikal_mode`` to tikal CLI arguments."""
+def _build_tikal_args(
+    operation: OkapiOperation,
+    input_name: str,
+    output_name: str,
+    *,
+    output_dir: str,
+) -> list[str]:
+    """Map registry ``tikal_mode`` to tikal CLI arguments (Okapi 1.48+ uses ``-od``)."""
+    _ = output_name
     mode = operation.tikal_mode
     if mode == "extract":
-        return ["-x", input_name, "-o", output_name]
+        return ["-x", input_name, "-od", output_dir]
     if mode == "merge":
-        return ["-m", input_name, "-o", output_name]
+        return ["-m", input_name, "-od", output_dir]
     if mode == "qa":
-        return ["-x", input_name, "-o", output_name, "-seg", "-check"]
+        return ["-x", input_name, "-od", output_dir, "-seg"]
     if mode == "terms":
-        return ["-x", input_name, "-o", output_name, "-tt", "terms.tbx"]
-    return ["-x", input_name, "-o", output_name]
+        return ["-x", input_name, "-od", output_dir, "-tt"]
+    return ["-x", input_name, "-od", output_dir]
+
+
+def _finalize_tikal_output(
+    work_dir: str,
+    input_path: str,
+    expected_basename: str,
+) -> str | None:
+    """Normalize tikal output names (e.g. ``doc.docx.xlf``) to registry artifact name."""
+    expected_path = os.path.join(work_dir, expected_basename)
+    if os.path.isfile(expected_path):
+        return expected_path
+    input_base = os.path.basename(input_path)
+    candidates = [
+        os.path.join(work_dir, f"{input_base}.xlf"),
+        os.path.join(work_dir, input_base),
+    ]
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            if os.path.abspath(candidate) != os.path.abspath(expected_path):
+                shutil.copy2(candidate, expected_path)
+            return expected_path
+    for name in os.listdir(work_dir):
+        if name.endswith((".xlf", ".html", ".tbx")) and name != expected_basename:
+            path = os.path.join(work_dir, name)
+            if os.path.isfile(path):
+                shutil.copy2(path, expected_path)
+                return expected_path
+    return None
 
 
 class MockOkapiRunner(OkapiRunner):
@@ -140,7 +176,7 @@ class LocalTikalRunner(OkapiRunner):
         if os.path.abspath(input_path) != os.path.abspath(staged_input):
             shutil.copy2(input_path, staged_input)
         output_name = operation.output_primary
-        args = _build_tikal_args(operation, input_name, output_name)
+        args = _build_tikal_args(operation, input_name, output_name, output_dir=".")
         cmd = [self._tikal_path, *args]
         try:
             completed = subprocess.run(
@@ -152,10 +188,10 @@ class LocalTikalRunner(OkapiRunner):
                 check=False,
             )
             log = (completed.stdout or "") + (completed.stderr or "")
-            output_path = os.path.join(work_dir, output_name)
             if completed.returncode != 0:
                 return OkapiRunResult(False, [], log, f"tikal exit {completed.returncode}")
-            if not os.path.isfile(output_path):
+            output_path = _finalize_tikal_output(work_dir, staged_input, output_name)
+            if not output_path:
                 return OkapiRunResult(False, [], log, f"missing output {output_name}")
             return OkapiRunResult(True, [output_path], log)
         except subprocess.TimeoutExpired:
@@ -176,17 +212,42 @@ class DockerTikalRunner(OkapiRunner):
         if not shutil.which("docker"):
             return RunnerHealth(self.backend_id, False, "docker CLI not found on PATH")
         try:
-            completed = subprocess.run(
+            daemon = subprocess.run(
                 ["docker", "info"],
                 capture_output=True,
                 text=True,
                 timeout=15,
                 check=False,
             )
-            if completed.returncode == 0:
-                return RunnerHealth(self.backend_id, True, f"docker ok; image={self._image}")
-            return RunnerHealth(self.backend_id, False, "docker daemon not running")
-        except (subprocess.TimeoutExpired, OSError) as exc:
+            if daemon.returncode != 0:
+                return RunnerHealth(self.backend_id, False, "docker daemon not running")
+            inspect = subprocess.run(
+                ["docker", "image", "inspect", self._image],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            if inspect.returncode != 0:
+                return RunnerHealth(
+                    self.backend_id,
+                    False,
+                    f"image {self._image} not found — run scripts/build_okapi_tikal_image.ps1",
+                )
+            probe = subprocess.run(
+                ["docker", "run", "--rm", self._image, "tikal", "-info"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
+            if probe.returncode != 0:
+                detail = (probe.stderr or probe.stdout or "tikal -info failed").strip()[:300]
+                return RunnerHealth(self.backend_id, False, f"tikal probe failed: {detail}")
+            return RunnerHealth(self.backend_id, True, f"tikal ready ({self._image})")
+        except subprocess.TimeoutExpired:
+            return RunnerHealth(self.backend_id, False, "docker tikal health check timed out")
+        except OSError as exc:
             return RunnerHealth(self.backend_id, False, str(exc))
 
     def run_operation(
@@ -203,7 +264,12 @@ class DockerTikalRunner(OkapiRunner):
         if os.path.abspath(input_path) != os.path.abspath(staged_input):
             shutil.copy2(input_path, staged_input)
         output_name = operation.output_primary
-        tikal_args = _build_tikal_args(operation, f"/work/{input_name}", f"/work/{output_name}")
+        tikal_args = _build_tikal_args(
+            operation,
+            f"/work/{input_name}",
+            output_name,
+            output_dir="/work",
+        )
         cmd = [
             "docker",
             "run",
@@ -223,10 +289,10 @@ class DockerTikalRunner(OkapiRunner):
                 check=False,
             )
             log = (completed.stdout or "") + (completed.stderr or "")
-            output_path = os.path.join(work_dir, output_name)
             if completed.returncode != 0:
                 return OkapiRunResult(False, [], log, f"docker tikal exit {completed.returncode}")
-            if not os.path.isfile(output_path):
+            output_path = _finalize_tikal_output(work_dir, staged_input, output_name)
+            if not output_path:
                 return OkapiRunResult(False, [], log, f"missing output {output_name}")
             return OkapiRunResult(True, [output_path], log)
         except subprocess.TimeoutExpired:
@@ -308,7 +374,7 @@ def build_runner(backend: str, app_path: str, config: dict[str, Any] | None = No
     """Factory used by API routes and pipeline manager."""
     cfg = config or load_okapi_config(app_path)
     if backend == BACKEND_DOCKER:
-        return DockerTikalRunner(cfg.get("docker_image") or "okapiframework/okapi:latest")
+        return DockerTikalRunner(cfg.get("docker_image") or DEFAULT_OKAPI_DOCKER_IMAGE)
     if backend == BACKEND_LOCAL_TIKAL:
         return LocalTikalRunner(cfg.get("tikal_path") or "")
     if backend == BACKEND_GITHUB:

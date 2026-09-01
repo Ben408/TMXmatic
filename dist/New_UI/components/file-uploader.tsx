@@ -18,6 +18,10 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { toast } from "@/components/ui/use-toast"
 import { Input } from "@/components/ui/input"
+import {
+  filterWorkspaceUploadFiles,
+  WORKSPACE_UPLOAD_ACCEPT,
+} from "@/lib/workspace-upload-formats"
 
 type SourceProject = {
   integration: "okapi"
@@ -64,34 +68,34 @@ export function FileUploader({ onFilesAdded }: FileUploaderProps) {
     setIsDragging(false)
   }
 
+  const ingestFiles = (filesArray: File[]) => {
+    const { accepted, rejected } = filterWorkspaceUploadFiles(filesArray)
+    if (accepted.length > 0) {
+      onFilesAdded(accepted)
+    }
+    if (rejected.length > 0) {
+      const names = rejected.map((f) => f.name).slice(0, 3).join(", ")
+      const more = rejected.length > 3 ? ` (+${rejected.length - 3} more)` : ""
+      toast({
+        title: "Unsupported file type",
+        description: `${names}${more} — use TMX, DOCX, Office, XLIFF, or other Okapi-supported formats.`,
+        variant: "destructive",
+      })
+    }
+  }
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
 
     if (e.dataTransfer.files.length > 0) {
-      const filesArray = Array.from(e.dataTransfer.files)
-      const validFiles = filesArray.filter((file) => {
-        const extension = file.name.split(".").pop()?.toLowerCase()
-        return ["tbx", "tmx", "xlsx", "xls", "csv", "xliff", "xlf", "zip"].includes(extension || "")
-      })
-
-      if (validFiles.length > 0) {
-        onFilesAdded(validFiles)
-      }
+      ingestFiles(Array.from(e.dataTransfer.files))
     }
   }
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const filesArray = Array.from(e.target.files)
-      const validFiles = filesArray.filter((file) => {
-        const extension = file.name.split(".").pop()?.toLowerCase()
-        return ["tbx", "tmx", "xlsx", "xls", "csv", "xliff", "xlf", "zip"].includes(extension || "")
-      })
-
-      if (validFiles.length > 0) {
-        onFilesAdded(validFiles)
-      }
+      ingestFiles(Array.from(e.target.files))
 
       // Reset the input so the same file can be uploaded again if needed
       if (fileInputRef.current) {
@@ -238,12 +242,14 @@ export function FileUploader({ onFilesAdded }: FileUploaderProps) {
               <Upload className="h-8 w-8 text-primary" />
             </div>
             <h3 className="mb-2 text-lg font-semibold">Drag and drop your files</h3>
-            <p className="mb-4 text-sm text-muted-foreground">Upload TMX, Excel, CSV, or XLIFF files</p>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Upload TMX, DOCX, Excel, XLIFF, and other Okapi-supported files
+            </p>
             <input
               ref={fileInputRef}
               type="file"
               multiple
-              accept=".tbx,.tmx,.xlsx,.xls,.csv,.xliff,.xlf,.zip"
+              accept={WORKSPACE_UPLOAD_ACCEPT}
               className="hidden"
               onChange={handleFileInputChange}
             />

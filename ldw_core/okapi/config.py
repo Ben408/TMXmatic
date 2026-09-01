@@ -23,6 +23,10 @@ ALL_BACKENDS = (
     BACKEND_HOSTED,
 )
 
+# Built from docker/okapi-tikal/Dockerfile — not a Docker Hub image.
+DEFAULT_OKAPI_DOCKER_IMAGE = "ldw-okapi-tikal:1.48"
+DEFAULT_OKAPI_VERSION = "1.48.0"
+
 
 def _settings_paths(app_path: str) -> tuple[str, str]:
     return (
@@ -38,7 +42,7 @@ def load_okapi_config(app_path: str | None = None) -> dict[str, Any]:
     config: dict[str, Any] = {
         "enabled": False,
         "backend": BACKEND_DOCKER,
-        "docker_image": "okapiframework/okapi:latest",
+        "docker_image": DEFAULT_OKAPI_DOCKER_IMAGE,
         "tikal_path": "",
         "github_repo": "",
         "github_workflow": "okapi-ops.yml",

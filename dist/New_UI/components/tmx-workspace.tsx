@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { format } from "date-fns"
 import { FileUploader } from "./file-uploader"
 import { WorkspaceFiles } from "./workspace-files"
@@ -186,6 +186,13 @@ export function TMXWorkspace() {
   ])
 
   const selectedFiles = files.filter(file => selectedFileIds.includes(file.id))
+
+  // Keep a single workspace file selected so Okapi / TMX ops stay usable.
+  useEffect(() => {
+    if (files.length === 1 && selectedFileIds.length === 0) {
+      setSelectedFileIds([files[0].id])
+    }
+  }, [files, selectedFileIds.length])
 
   const appendCutoffDateIfApplicable = (formData: FormData, primaryOperationId: string) => {
     const ops = queuedOperations.length > 0 ? queuedOperations : [primaryOperationId]
@@ -951,9 +958,7 @@ export function TMXWorkspace() {
           />
         )}
 
-        {selectedFiles.length > 0 && (
-          <OkapiPanel files={selectedFiles} />
-        )}
+        <OkapiPanel files={selectedFiles} workspaceFileCount={files.length} />
       </div>
 
       <div className="space-y-6">

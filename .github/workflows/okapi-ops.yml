@@ -29,7 +29,7 @@ jobs:
   run-okapi:
     runs-on: ubuntu-latest
     env:
-      OKAPI_VERSION: "1.47.0"
+      OKAPI_VERSION: "1.48.0"
     steps:
       - uses: actions/checkout@v4
 
@@ -41,9 +41,11 @@ jobs:
 
       - name: Install Okapi tikal
         run: |
-          curl -L -o okapi.zip "https://github.com/okapiframework/okapi/releases/download/v${OKAPI_VERSION}/okapi-apps-${OKAPI_VERSION}.zip"
+          curl -fsSL -o okapi.zip "https://okapiframework.org/binaries/main/${OKAPI_VERSION}/okapi-apps_gtk2-linux-x86_64_${OKAPI_VERSION}.zip"
           unzip -q okapi.zip -d "$HOME/okapi"
-          echo "$HOME/okapi/okapi-apps-${OKAPI_VERSION}" >> "$GITHUB_PATH"
+          echo "$HOME/okapi" >> "$GITHUB_PATH"
+          printf '#!/bin/bash\nexec "$HOME/okapi/tikal.sh" "$@"\n' > "$HOME/okapi/tikal"
+          chmod +x "$HOME/okapi/tikal" "$HOME/okapi/tikal.sh"
 
       - name: Download input
         run: curl -L "${{ github.event.inputs.input_url }}" -o input.bin
@@ -54,10 +56,10 @@ jobs:
           set -euo pipefail
           OP="${{ github.event.inputs.operation }}"
           case "$OP" in
-            convert) tikal.sh -x input.bin -o converted.xlf ;;
-            merge) tikal.sh -m input.bin -o merged-output ;;
-            qa) tikal.sh -x input.bin -o qa-report.html -seg -check ;;
-            terms) tikal.sh -x input.bin -o terms.tbx -tt terms.tbx ;;
+            convert) tikal -x input.bin -od . -sl en-us -tl fr-fr && mv input.bin.xlf converted.xlf ;;
+            merge) tikal -m input.bin -od . && test -e merged-output || cp -a . merged-output ;;
+            qa) tikal -x input.bin -od . -seg ;;
+            terms) tikal -x input.bin -od . -tt ;;
             *) echo "Unknown operation: $OP"; exit 2 ;;
           esac
 

@@ -43,6 +43,14 @@ const nextConfig = {
     parallelServerBuildTraces: true,
     parallelServerCompiles: true
   },
+  async rewrites() {
+    const backend = process.env.LDW_API_PROXY || "http://127.0.0.1:5000"
+    return [
+      { source: "/api/:path*", destination: `${backend}/api/:path*` },
+      { source: "/queue/:path*", destination: `${backend}/queue/:path*` },
+      { source: "/health", destination: `${backend}/health` },
+    ]
+  },
   webpack: (config, { isServer }) => {
     // Only include optional features if they're installed
     const optionalFeatures = ['recharts', 'embla-carousel-react', 'vaul', 'cmdk'];

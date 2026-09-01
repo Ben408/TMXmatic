@@ -9,6 +9,7 @@ import { toast } from "@/components/ui/use-toast"
 import { WorkspaceFile } from "./tmx-workspace"
 import { PipelineBuilder } from "./pipeline-builder"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ldwApi } from "@/lib/ldw-api"
 
 type OkapiOperation = {
   id: string
@@ -33,10 +34,12 @@ type BackendStatus = {
 
 export interface OkapiPanelProps {
   files: WorkspaceFile[]
+  /** Total files in workspace (selected count may be zero). */
+  workspaceFileCount?: number
 }
 
 /** Okapi operations + pipeline templates — Phase 2 UI (registry-driven). */
-export function OkapiPanel({ files }: OkapiPanelProps) {
+export function OkapiPanel({ files, workspaceFileCount = 0 }: OkapiPanelProps) {
   const [operations, setOperations] = useState<OkapiOperation[]>([])
   const [templates, setTemplates] = useState<PipelineTemplate[]>([])
   const [backends, setBackends] = useState<BackendStatus[]>([])
@@ -47,9 +50,9 @@ export function OkapiPanel({ files }: OkapiPanelProps) {
     setLoading(true)
     try {
       const [opsRes, tplRes, backRes] = await Promise.all([
-        fetch("/api/okapi/operations"),
-        fetch("/api/pipeline-templates"),
-        fetch("/api/okapi/backends/status"),
+        fetch(ldwApi("/api/okapi/operations")),
+        fetch(ldwApi("/api/pipeline-templates")),
+        fetch(ldwApi("/api/okapi/backends/status")),
       ])
       if (opsRes.ok) {
         const opsJson = await opsRes.json()
@@ -81,8 +84,8 @@ export function OkapiPanel({ files }: OkapiPanelProps) {
 
   const pollJob = async (jobId: string): Promise<boolean> => {
     const deadline = Date.now() + 120_000
-    while Date.now() < deadline) {
-      const res = await fetch(`/api/okapi/status/${jobId}`)
+    while (Date.now() < deadline) {
+      const res = await fetch(ldwApi(`/api/okapi/status/${jobId}`))
       if (!res.ok) return false
       const job = await res.json()
       if (job.status === "completed") return true
@@ -100,7 +103,7 @@ export function OkapiPanel({ files }: OkapiPanelProps) {
   }
 
   const downloadArtifact = async (jobId: string, name: string) => {
-    const res = await fetch(`/api/jobs/${jobId}/artifacts/${encodeURIComponent(name)}`)
+    const res = await fetch(ldwApi(`/api/jobs/${jobId}/artifacts/${encodeURIComponent(name)}`))
     if (!res.ok) {
       toast({ title: "Download failed", variant: "destructive" })
       return
@@ -122,7 +125,7 @@ export function OkapiPanel({ files }: OkapiPanelProps) {
       const form = new FormData()
       form.append("file", file.originalData, file.name)
       form.append("operation", operationId)
-      const res = await fetch("/api/okapi/submit-upload", { method: "POST", body: form })
+      const res = await fetch(ldwApi("/api/okapi/submit-upload"), { method: "POST", body: form })
       if (!res.ok) {
         const err = await res.json()
         throw new Error(err.error || res.statusText)
@@ -131,7 +134,7 @@ export function OkapiPanel({ files }: OkapiPanelProps) {
       const jobId = body.job.id
       const ok = await pollJob(jobId)
       if (ok) {
-        const results = await fetch(`/api/okapi/results/${jobId}`)
+        const results = await fetch(ldwApi(`/api/okapi/results/${jobId}`))
         const parsed = await results.json()
         const primary = parsed.artifacts?.[0]?.name
         if (primary) await downloadArtifact(jobId, primary)
@@ -156,7 +159,7 @@ export function OkapiPanel({ files }: OkapiPanelProps) {
       const form = new FormData()
       form.append("file", file.originalData, file.name)
       form.append("template_id", templateId)
-      const res = await fetch("/api/pipelines/execute", { method: "POST", body: form })
+      const res = await fetch(ldwApi("/api/pipelines/execute"), { method: "POST", body: form })
       if (!res.ok) {
         const err = await res.json()
         throw new Error(err.error || res.statusText)
@@ -188,6 +191,24 @@ export function OkapiPanel({ files }: OkapiPanelProps) {
 
   const activeBackend = backends.find((b) => b.active)
 
+  const workspaceHint =
+    files.length > 0 ? (
+      <p className="text-sm text-muted-foreground">
+        Input file: <span className="font-medium text-foreground">{files[0].name}</span>
+        {files.length > 1 ? ` (+${files.length - 1} more selected)` : ""}
+      </p>
+    ) : workspaceFileCount > 0 ? (
+      <p className="text-sm text-amber-700 dark:text-amber-400">
+        Click a file in <strong>Workspace Files</strong> above to select it for Okapi and pipelines.
+      </p>
+    ) : (
+      <p className="text-sm text-muted-foreground">
+        Add a file using the upload area at the top of the page — pipelines reuse the same workspace
+        (no separate upload here). For Tikal document tests use <strong>.docx</strong> or{" "}
+        <strong>.xlsx</strong>; TMX files use the TMX Operations panel above.
+      </p>
+    )
+
   return (
     <Tabs defaultValue="operations" className="space-y-4">
       <TabsList className="grid w-full grid-cols-3">
@@ -195,6 +216,10 @@ export function OkapiPanel({ files }: OkapiPanelProps) {
         <TabsTrigger value="pipelines">Pipelines</TabsTrigger>
         <TabsTrigger value="builder">Builder</TabsTrigger>
       </TabsList>
+
+      <Card>
+        <CardContent className="pt-4">{workspaceHint}</CardContent>
+      </Card>
 
       <TabsContent value="operations" className="space-y-4">
       <Card>
@@ -255,6 +280,12 @@ export function OkapiPanel({ files }: OkapiPanelProps) {
           <CardDescription>Hybrid workflows — Okapi + Python steps from the spec templates.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
+          {templates.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No pipeline templates loaded — check that the Flask backend is running on port 5000,
+              then click Refresh on Okapi ops.
+            </p>
+          ) : null}
           {templates.map((tpl) => (
             <div key={tpl.id} className="flex items-center justify-between rounded-lg border p-3">
               <div>
