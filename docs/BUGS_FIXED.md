@@ -17,6 +17,8 @@
 | 2026-09-01 | GHA merge | Merge leg needs companion DOCX — `options_json.companion_url` in workflow; `okapi_smoke.py --roundtrip`. |
 | 2026-09-01 | Okapi lang pair | Convert/merge without `-sl`/`-tl` — `tikal_options.py` defaults `en-us`/`fr-fr`; workflow passes lang flags. |
 | 2026-09-01 | Lang retag | Standalone `scripts/lang_retag.py` — XLIFF file-level attrs only; TMX header + positional `tuv` find/replace (no regex in `seg`/`prop`). |
+| 2026-09-01 | Pipeline gemma step | `xliff_gemma_mt` crashed after MT (`json` not imported) — `import json` in `python_steps.py`. |
+| 2026-09-04 | Pipeline merge | `docx_localize_basic` Docker merge failed: gemma left `converted.xlf`; tikal `-m` looked for `/work/converted`. Stage as `package.docx.xlf` beside original package (`pipeline_manager._stage_merge_companions`). |
 
 ---
 
@@ -24,3 +26,4 @@
 
 - Module Flask blueprints are **not** auto-registered — discovery via `modules.json` only.
 - Okapi leverage match rate depends on Okapi segmentation vs Phrase TM source strings (markup/whitespace); expect partial coverage on help XHTML.
+- **2026-09-04 — IDML + `xliff_gemma_mt`:** Slack IDML pilot can leave some frames empty. Extract yields real text TUs plus placeholder `<ph>`/`<content-1/>` units; gemma errors leave real targets blank (extract uses `-nocopy`), while code-only segments get junk MT. Next: skip code-only sources; surface/retry segment failures.
