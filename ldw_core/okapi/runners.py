@@ -342,7 +342,14 @@ class DockerTikalRunner(OkapiRunner):
             if operation.tikal_mode == "merge":
                 output_path = merge_output_path(work_dir, merge_input)
                 if completed.returncode != 0 or not output_path:
-                    return OkapiRunResult(False, [], log, f"docker tikal merge failed (exit {completed.returncode})")
+                    detail = (log or "").strip().splitlines()
+                    hint = detail[-1] if detail else "no tikal output"
+                    return OkapiRunResult(
+                        False,
+                        [],
+                        log,
+                        f"docker tikal merge failed (exit {completed.returncode}): {hint}",
+                    )
                 return OkapiRunResult(True, [output_path], log)
             output_path = _finalize_tikal_output(work_dir, staged_input, output_name)
             if completed.returncode != 0:

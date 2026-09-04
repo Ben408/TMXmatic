@@ -64,11 +64,24 @@ class HybridPipelineManager:
                     return {"success": False, "error": f"step {step_id} missing operation", "steps": step_results}
                 step_backend = backend or step.get("backend")
                 step_options = {**shared_options, **(step.get("options") or {})}
+                step_input = current_files[0]
                 if operation == "merge":
-                    self._stage_merge_companions(work_dir, step_work, original_inputs, current_files[0])
+                    staged_xliff = self._stage_merge_companions(
+                        work_dir, step_work, original_inputs, current_files[0]
+                    )
+                    if not staged_xliff:
+                        return {
+                            "success": False,
+                            "error": (
+                                f"step {step_id}: could not stage package + XLIFF for merge "
+                                f"(need original .docx/.xlsx/… beside translated XLIFF)"
+                            ),
+                            "steps": step_results,
+                        }
+                    step_input = staged_xliff
                 result = self._executor.execute(
                     operation,
-                    current_files[0],
+                    step_input,
                     step_work,
                     backend=step_backend,
                     options=step_options,
@@ -124,18 +137,42 @@ class HybridPipelineManager:
         step_work: str,
         original_inputs: list[str],
         xliff_path: str,
-    ) -> None:
-        """Copy package + XLIFF into merge step dir for tikal (-m)."""
+    ) -> str | None:
+        """Stage package + XLIFF so tikal ``-m`` sees ``doc.docx`` + ``doc.docx.xlf``.
+
+        Pipeline extract normalizes XLIFF to ``converted.xlf``. Gemma keeps that
+        basename. Tikal merge strips ``.xlf`` and opens the companion package, so
+        ``converted.xlf`` becomes ``/work/converted`` (no filter) and fails.
+        """
         os.makedirs(step_work, exist_ok=True)
+        package_src: str | None = None
         for orig in original_inputs:
             ext = os.path.splitext(orig)[1].lower()
-            if ext in _PACKAGE_EXTENSIONS:
-                for candidate in (orig, os.path.join(work_dir, os.path.basename(orig))):
-                    if os.path.isfile(candidate):
-                        dest = os.path.join(step_work, os.path.basename(candidate))
-                        if not os.path.isfile(dest):
-                            shutil.copy2(candidate, dest)
-        if os.path.isfile(xliff_path):
-            dest = os.path.join(step_work, os.path.basename(xliff_path))
-            if os.path.abspath(xliff_path) != os.path.abspath(dest):
-                shutil.copy2(xliff_path, dest)
+            if ext not in _PACKAGE_EXTENSIONS:
+                continue
+            for candidate in (orig, os.path.join(work_dir, os.path.basename(orig))):
+                if os.path.isfile(candidate):
+                    package_src = candidate
+                    break
+            if package_src:
+                break
+        if not package_src or not os.path.isfile(xliff_path):
+            return None
+
+        package_name = os.path.basename(package_src)
+        package_dest = os.path.join(step_work, package_name)
+        if os.path.abspath(package_src) != os.path.abspath(package_dest):
+            shutil.copy2(package_src, package_dest)
+
+        # Prefer package.docx.xlf; never leave gemma output as converted.xlf for -m.
+        xliff_dest = os.path.join(step_work, f"{package_name}.xlf")
+        if os.path.abspath(xliff_path) != os.path.abspath(xliff_dest):
+            shutil.copy2(xliff_path, xliff_dest)
+        # Drop a stale converted.xlf so merge_xliff_path / tikal cannot prefer it.
+        stale = os.path.join(step_work, "converted.xlf")
+        if os.path.isfile(stale) and os.path.abspath(stale) != os.path.abspath(xliff_dest):
+            try:
+                os.remove(stale)
+            except OSError:
+                pass
+        return xliff_dest
